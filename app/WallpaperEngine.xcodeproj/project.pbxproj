@@ -1,0 +1,632 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0A1000010000000000000001 /* WallpaperEngineApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2000010000000000000001 /* WallpaperEngineApp.swift */; };
+		0A1000010000000000000002 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2000010000000000000002 /* AppDelegate.swift */; };
+		0A1000010000000000000003 /* BridgeEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2000010000000000000003 /* BridgeEnvironment.swift */; };
+		0A1000010000000000000004 /* BridgeStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2000010000000000000004 /* BridgeStore.swift */; };
+		0A1000010000000000000005 /* ControlPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2000010000000000000005 /* ControlPanelView.swift */; };
+		0A1000010000000000000006 /* WallpaperBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2000010000000000000006 /* WallpaperBridge.swift */; };
+		0A1000010000000000000007 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0A2000010000000000000007 /* Assets.xcassets */; };
+		0A1000010000000000000008 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 0A2000010000000000000008 /* Localizable.xcstrings */; };
+		0A1000010000000000000010 /* WallpaperPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2000010000000000000013 /* WallpaperPageView.swift */; };
+		0A1000010000000000000011 /* WallpaperCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2000010000000000000014 /* WallpaperCardView.swift */; };
+		0A1000010000000000000012 /* WallpaperInspectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2000010000000000000015 /* WallpaperInspectorView.swift */; };
+		0A1000010000000000000013 /* DisplayConfigurationSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2000010000000000000016 /* DisplayConfigurationSection.swift */; };
+		0A1000010000000000000014 /* GeneralConfigurationSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2000010000000000000017 /* GeneralConfigurationSection.swift */; };
+		0A1000010000000000000015 /* WallpaperPropertiesSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2000010000000000000018 /* WallpaperPropertiesSection.swift */; };
+		0A1000010000000000000016 /* EditableNumberField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2000010000000000000019 /* EditableNumberField.swift */; };
+		0A1000010000000000000017 /* DisplayInformationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2000010000000000000020 /* DisplayInformationView.swift */; };
+		0A1000010000000000000018 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2000010000000000000021 /* SettingsView.swift */; };
+		0A1000010000000000000019 /* DisplaySettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2000010000000000000022 /* DisplaySettingsSection.swift */; };
+		0A1000010000000000000020 /* AboutSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2000010000000000000023 /* AboutSection.swift */; };
+		0A1000010000000000000021 /* RichTextLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2000010000000000000024 /* RichTextLabel.swift */; };
+		0A1000010000000000000022 /* WallpaperOptionsEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2000010000000000000026 /* WallpaperOptionsEditorView.swift */; };
+		0A1000010000000000000023 /* ProgramSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2000010000000000000027 /* ProgramSettingsSection.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		0A2000010000000000000001 /* WallpaperEngineApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperEngineApp.swift; sourceTree = "<group>"; };
+		0A2000010000000000000002 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		0A2000010000000000000003 /* BridgeEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeEnvironment.swift; sourceTree = "<group>"; };
+		0A2000010000000000000004 /* BridgeStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeStore.swift; sourceTree = "<group>"; };
+		0A2000010000000000000005 /* ControlPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlPanelView.swift; sourceTree = "<group>"; };
+		0A2000010000000000000006 /* WallpaperBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperBridge.swift; sourceTree = "<group>"; };
+		0A2000010000000000000007 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		0A2000010000000000000008 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		0A2000010000000000000010 /* WallpaperBridgeFFI.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = WallpaperBridgeFFI.h; sourceTree = "<group>"; };
+		0A2000010000000000000011 /* WallpaperBridgeFFI.modulemap */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.module-map"; path = WallpaperBridgeFFI.modulemap; sourceTree = "<group>"; };
+		0A2000010000000000000012 /* Wallpaper Engine.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Wallpaper Engine.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		0A2000010000000000000013 /* WallpaperPageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperPageView.swift; sourceTree = "<group>"; };
+		0A2000010000000000000014 /* WallpaperCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperCardView.swift; sourceTree = "<group>"; };
+		0A2000010000000000000015 /* WallpaperInspectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperInspectorView.swift; sourceTree = "<group>"; };
+		0A2000010000000000000016 /* DisplayConfigurationSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayConfigurationSection.swift; sourceTree = "<group>"; };
+		0A2000010000000000000017 /* GeneralConfigurationSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneralConfigurationSection.swift; sourceTree = "<group>"; };
+		0A2000010000000000000018 /* WallpaperPropertiesSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperPropertiesSection.swift; sourceTree = "<group>"; };
+		0A2000010000000000000019 /* EditableNumberField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditableNumberField.swift; sourceTree = "<group>"; };
+		0A2000010000000000000020 /* DisplayInformationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayInformationView.swift; sourceTree = "<group>"; };
+		0A2000010000000000000021 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		0A2000010000000000000022 /* DisplaySettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplaySettingsSection.swift; sourceTree = "<group>"; };
+		0A2000010000000000000023 /* AboutSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutSection.swift; sourceTree = "<group>"; };
+		0A2000010000000000000024 /* RichTextLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RichTextLabel.swift; sourceTree = "<group>"; };
+		0A2000010000000000000025 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		0A2000010000000000000026 /* WallpaperOptionsEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperOptionsEditorView.swift; sourceTree = "<group>"; };
+		0A2000010000000000000027 /* ProgramSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgramSettingsSection.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		0A3000010000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		0A4000010000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				0A4000010000000000000002 /* WallpaperEngine */,
+				0A4000010000000000000008 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		0A4000010000000000000002 /* WallpaperEngine */ = {
+			isa = PBXGroup;
+			children = (
+				0A2000010000000000000001 /* WallpaperEngineApp.swift */,
+				0A2000010000000000000002 /* AppDelegate.swift */,
+				0A4000010000000000000003 /* Bridge */,
+				0A4000010000000000000005 /* ViewModels */,
+				0A4000010000000000000006 /* Views */,
+				0A4000010000000000000007 /* Resources */,
+			);
+			path = WallpaperEngine;
+			sourceTree = "<group>";
+		};
+		0A4000010000000000000003 /* Bridge */ = {
+			isa = PBXGroup;
+			children = (
+				0A2000010000000000000003 /* BridgeEnvironment.swift */,
+				0A4000010000000000000004 /* Generated */,
+			);
+			path = Bridge;
+			sourceTree = "<group>";
+		};
+		0A4000010000000000000004 /* Generated */ = {
+			isa = PBXGroup;
+			children = (
+				0A2000010000000000000006 /* WallpaperBridge.swift */,
+				0A2000010000000000000010 /* WallpaperBridgeFFI.h */,
+				0A2000010000000000000011 /* WallpaperBridgeFFI.modulemap */,
+			);
+			path = Generated;
+			sourceTree = "<group>";
+		};
+		0A4000010000000000000005 /* ViewModels */ = {
+			isa = PBXGroup;
+			children = (
+				0A2000010000000000000004 /* BridgeStore.swift */,
+			);
+			path = ViewModels;
+			sourceTree = "<group>";
+		};
+		0A4000010000000000000006 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				0A4000010000000000000009 /* ControlPanel */,
+				0A4000010000000000000010 /* Wallpaper */,
+				0A4000010000000000000011 /* Shared */,
+				0A4000010000000000000012 /* DisplayInformation */,
+				0A4000010000000000000013 /* Settings */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		0A4000010000000000000007 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				0A2000010000000000000007 /* Assets.xcassets */,
+				0A2000010000000000000025 /* Info.plist */,
+				0A2000010000000000000008 /* Localizable.xcstrings */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		0A4000010000000000000008 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				0A2000010000000000000012 /* Wallpaper Engine.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		0A4000010000000000000009 /* ControlPanel */ = {
+			isa = PBXGroup;
+			children = (
+				0A2000010000000000000005 /* ControlPanelView.swift */,
+			);
+			path = ControlPanel;
+			sourceTree = "<group>";
+		};
+		0A4000010000000000000010 /* Wallpaper */ = {
+			isa = PBXGroup;
+			children = (
+				0A2000010000000000000013 /* WallpaperPageView.swift */,
+				0A2000010000000000000014 /* WallpaperCardView.swift */,
+				0A2000010000000000000015 /* WallpaperInspectorView.swift */,
+				0A2000010000000000000016 /* DisplayConfigurationSection.swift */,
+				0A2000010000000000000017 /* GeneralConfigurationSection.swift */,
+				0A2000010000000000000018 /* WallpaperPropertiesSection.swift */,
+				0A2000010000000000000026 /* WallpaperOptionsEditorView.swift */,
+			);
+			path = Wallpaper;
+			sourceTree = "<group>";
+		};
+		0A4000010000000000000011 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				0A2000010000000000000019 /* EditableNumberField.swift */,
+				0A2000010000000000000024 /* RichTextLabel.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		0A4000010000000000000012 /* DisplayInformation */ = {
+			isa = PBXGroup;
+			children = (
+				0A2000010000000000000020 /* DisplayInformationView.swift */,
+			);
+			path = DisplayInformation;
+			sourceTree = "<group>";
+		};
+		0A4000010000000000000013 /* Settings */ = {
+			isa = PBXGroup;
+			children = (
+				0A2000010000000000000021 /* SettingsView.swift */,
+				0A2000010000000000000027 /* ProgramSettingsSection.swift */,
+				0A2000010000000000000022 /* DisplaySettingsSection.swift */,
+				0A2000010000000000000023 /* AboutSection.swift */,
+			);
+			path = Settings;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		0A5000010000000000000001 /* WallpaperEngine */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0A9000010000000000000002 /* Build configuration list for PBXNativeTarget "WallpaperEngine" */;
+			buildPhases = (
+				0A6000010000000000000001 /* Sources */,
+				0A3000010000000000000001 /* Frameworks */,
+				0A7000010000000000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = WallpaperEngine;
+			productName = "Wallpaper Engine";
+			productReference = 0A2000010000000000000012 /* Wallpaper Engine.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		0A8000010000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 2650;
+				TargetAttributes = {
+					0A5000010000000000000001 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+				};
+			};
+			buildConfigurationList = 0A9000010000000000000001 /* Build configuration list for PBXProject "WallpaperEngine" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+				"zh-Hans",
+			);
+			mainGroup = 0A4000010000000000000001;
+			productRefGroup = 0A4000010000000000000008 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				0A5000010000000000000001 /* WallpaperEngine */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		0A7000010000000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0A1000010000000000000007 /* Assets.xcassets in Resources */,
+				0A1000010000000000000008 /* Localizable.xcstrings in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		0A6000010000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0A1000010000000000000001 /* WallpaperEngineApp.swift in Sources */,
+				0A1000010000000000000002 /* AppDelegate.swift in Sources */,
+				0A1000010000000000000003 /* BridgeEnvironment.swift in Sources */,
+				0A1000010000000000000004 /* BridgeStore.swift in Sources */,
+				0A1000010000000000000005 /* ControlPanelView.swift in Sources */,
+				0A1000010000000000000006 /* WallpaperBridge.swift in Sources */,
+				0A1000010000000000000010 /* WallpaperPageView.swift in Sources */,
+				0A1000010000000000000011 /* WallpaperCardView.swift in Sources */,
+				0A1000010000000000000012 /* WallpaperInspectorView.swift in Sources */,
+				0A1000010000000000000013 /* DisplayConfigurationSection.swift in Sources */,
+				0A1000010000000000000014 /* GeneralConfigurationSection.swift in Sources */,
+				0A1000010000000000000015 /* WallpaperPropertiesSection.swift in Sources */,
+				0A1000010000000000000022 /* WallpaperOptionsEditorView.swift in Sources */,
+				0A1000010000000000000016 /* EditableNumberField.swift in Sources */,
+				0A1000010000000000000017 /* DisplayInformationView.swift in Sources */,
+				0A1000010000000000000018 /* SettingsView.swift in Sources */,
+				0A1000010000000000000023 /* ProgramSettingsSection.swift in Sources */,
+				0A1000010000000000000019 /* DisplaySettingsSection.swift in Sources */,
+				0A1000010000000000000020 /* AboutSection.swift in Sources */,
+				0A1000010000000000000021 /* RichTextLabel.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		0AA000010000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		0AA000010000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+			};
+			name = Release;
+		};
+		0AA000010000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CONFIGURATION_BUILD_DIR = "$(PROJECT_DIR)/../build/$(CONFIGURATION)";
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/WallpaperEngine/Bridge/Generated",
+				);
+				INFOPLIST_FILE = WallpaperEngine/Resources/Info.plist;
+				LD = "$(TOOLCHAIN_DIR)/usr/bin/clang";
+				LDPLUSPLUS = "$(TOOLCHAIN_DIR)/usr/bin/clang++";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../PlugIns",
+					"$(SRCROOT)/../target/release",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/../target/release",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"$(NIX_LDFLAGS)",
+					"-lwallpaper_bridge",
+					"-lc++",
+					"-lvulkan",
+					"-llz4",
+					"-lavformat",
+					"-lavcodec",
+					"-lavutil",
+					"-lswresample",
+					"-lavfilter",
+					"-lavdevice",
+					"-lswscale",
+					"-lqjs",
+					"-lglslang",
+					"-lSPIRV",
+					"-lglslang-default-resource-limits",
+					"-framework",
+					Accelerate,
+					"-framework",
+					AppKit,
+					"-framework",
+					CoreAudio,
+					"-framework",
+					CoreData,
+					"-framework",
+					CoreFoundation,
+					"-framework",
+					CoreGraphics,
+					"-framework",
+					CoreImage,
+					"-framework",
+					CoreMedia,
+					"-framework",
+					CoreText,
+					"-framework",
+					CoreVideo,
+					"-framework",
+					Foundation,
+					"-framework",
+					IOSurface,
+					"-framework",
+					Metal,
+					"-framework",
+					OpenGL,
+					"-framework",
+					QuartzCore,
+					"-framework",
+					VideoToolbox,
+					"-liconv",
+				);
+				OTHER_SWIFT_FLAGS = "$(inherited) -Xcc -fmodule-map-file=$(SRCROOT)/WallpaperEngine/Bridge/Generated/WallpaperBridgeFFI.modulemap";
+				PRODUCT_BUNDLE_IDENTIFIER = "dev.molyuu.wallpaper-engine";
+				PRODUCT_NAME = "Wallpaper Engine";
+				SUPPORTED_PLATFORMS = macosx;
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_INCLUDE_PATHS = "$(inherited) $(SRCROOT)/WallpaperEngine/Bridge/Generated";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		0AA000010000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CONFIGURATION_BUILD_DIR = "$(PROJECT_DIR)/../build/$(CONFIGURATION)";
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/WallpaperEngine/Bridge/Generated",
+				);
+				INFOPLIST_FILE = WallpaperEngine/Resources/Info.plist;
+				LD = "$(TOOLCHAIN_DIR)/usr/bin/clang";
+				LDPLUSPLUS = "$(TOOLCHAIN_DIR)/usr/bin/clang++";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../PlugIns",
+					"$(SRCROOT)/../target/release",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/../target/release",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"$(NIX_LDFLAGS)",
+					"-lwallpaper_bridge",
+					"-lc++",
+					"-lvulkan",
+					"-llz4",
+					"-lavformat",
+					"-lavcodec",
+					"-lavutil",
+					"-lswresample",
+					"-lavfilter",
+					"-lavdevice",
+					"-lswscale",
+					"-lqjs",
+					"-lglslang",
+					"-lSPIRV",
+					"-lglslang-default-resource-limits",
+					"-framework",
+					Accelerate,
+					"-framework",
+					AppKit,
+					"-framework",
+					CoreAudio,
+					"-framework",
+					CoreData,
+					"-framework",
+					CoreFoundation,
+					"-framework",
+					CoreGraphics,
+					"-framework",
+					CoreImage,
+					"-framework",
+					CoreMedia,
+					"-framework",
+					CoreText,
+					"-framework",
+					CoreVideo,
+					"-framework",
+					Foundation,
+					"-framework",
+					IOSurface,
+					"-framework",
+					Metal,
+					"-framework",
+					OpenGL,
+					"-framework",
+					QuartzCore,
+					"-framework",
+					VideoToolbox,
+					"-liconv",
+				);
+				OTHER_SWIFT_FLAGS = "$(inherited) -Xcc -fmodule-map-file=$(SRCROOT)/WallpaperEngine/Bridge/Generated/WallpaperBridgeFFI.modulemap";
+				PRODUCT_BUNDLE_IDENTIFIER = "dev.molyuu.wallpaper-engine";
+				PRODUCT_NAME = "Wallpaper Engine";
+				SUPPORTED_PLATFORMS = macosx;
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_INCLUDE_PATHS = "$(inherited) $(SRCROOT)/WallpaperEngine/Bridge/Generated";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		0A9000010000000000000001 /* Build configuration list for PBXProject "WallpaperEngine" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0AA000010000000000000001 /* Debug */,
+				0AA000010000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		0A9000010000000000000002 /* Build configuration list for PBXNativeTarget "WallpaperEngine" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0AA000010000000000000003 /* Debug */,
+				0AA000010000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 0A8000010000000000000001 /* Project object */;
+}

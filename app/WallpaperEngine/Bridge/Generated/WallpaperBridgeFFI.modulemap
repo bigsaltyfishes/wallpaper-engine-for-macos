@@ -1,0 +1,4 @@
+module WallpaperBridgeFFI {
+    header "WallpaperBridgeFFI.h"
+    export *
+}

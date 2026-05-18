@@ -1,0 +1,44 @@
+[package]
+name = "wallpaper-bridge"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "wallpaper_bridge"
+crate-type = ["staticlib", "rlib"]
+path = "src/lib.rs"
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/uniffi.rs"
+
+[dependencies]
+wallpaper-core = { path = "../core" }
+anyhow = { workspace = true }
+arc-swap = "1.9.1"
+async-channel = "2"
+crossbeam-queue = "0.3"
+dirs = "5"
+fs2 = "0.4"
+futures-util = "0.3"
+image = { version = "0.25", default-features = false, features = ["gif", "jpeg", "png"] }
+kameo = "0.20.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+tempfile = "3"
+thiserror = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "sync", "time", "io-util"] }
+toml = "0.8"
+tracing = "0.1"
+uniffi = { version = "0.28", features = ["cli"] }
+objc2 = "0.6.4"
+objc2-foundation = "0.3.2"
+objc2-service-management = "0.3.2"
+
+[build-dependencies]
+uniffi = { version = "0.28", features = ["build"] }
+
+[dev-dependencies]
+pretty_assertions = "1"
+tempfile = "3"

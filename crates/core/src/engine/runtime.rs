@@ -1,0 +1,532 @@
+use serde_json::Value;
+
+use crate::{
+    DisplayDesc, EngineError, WallpaperWindow,
+    display::state::DisplayKey,
+    media::audio::AudioVolume,
+    owe::backend::{OweBackend, OweScene},
+    project::{ScalingMode, SceneDesc, SceneHandle, SerdeValudeExt},
+};
+
+pub struct SceneRuntime {
+    /// Last descriptor used to configure the renderer scene.
+    pub desc: SceneDesc,
+    /// Opaque Open Wallpaper Engine renderer object.
+    renderer: OweScene,
+    /// Runtime override applied after descriptor defaults.
+    scaling_mode: ScalingMode,
+    /// Runtime override applied after descriptor defaults.
+    scaling_factor: f64,
+    /// Renderer-surface override. Changing this rebuilds the renderer object.
+    render_resolution: Option<(u32, u32)>,
+    /// Runtime audio-response state, preserved across scene reconciliation.
+    audio_response_enabled: bool,
+    /// Runtime playback state, preserved across scene reconciliation.
+    paused: bool,
+    /// Runtime scene-global audio volume, preserved across scene
+    /// reconciliation.
+    audio_volume: AudioVolume,
+    /// Runtime scene-global audio mute state, preserved across scene
+    /// reconciliation.
+    audio_muted: bool,
+    /// Flattened runtime property override, preserved across reconciliation.
+    property_override_json: Option<String>,
+    /// `AppKit` window that owns the `CAMetalLayer` passed to OWE.
+    window: Option<WallpaperWindow>,
+}
+
+#[derive(Clone)]
+pub struct SceneRuntimeState {
+    /// Mutable state that should survive replacing the scene descriptor.
+    pub scaling_mode: ScalingMode,
+    pub scaling_factor: f64,
+    pub render_resolution: Option<(u32, u32)>,
+    pub audio_response_enabled: bool,
+    pub paused: bool,
+    pub audio_volume: AudioVolume,
+    pub audio_muted: bool,
+    pub property_override_json: Option<String>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum PropertyOverrideUpdate<'a> {
+    Unchanged,
+    Apply(&'a str),
+    Reset,
+}
+
+pub struct RuntimeRefreshJob {
+    pub key: DisplayKey,
+    pub handle: SceneHandle,
+    pub desc: SceneDesc,
+    pub runtime_state: SceneRuntimeState,
+    pub existing_runtime: Option<SceneRuntime>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RuntimeRefreshMode {
+    Unchanged,
+    OpenRuntime,
+    UpdateWindowOnly,
+    RebuildExistingRuntime,
+    ReopenRuntime,
+}
+
+impl RuntimeRefreshMode {
+    /// Classifies the transition between two scene descriptors.
+    pub fn from_transition(current: Option<&SceneDesc>, desired: &SceneDesc) -> Self {
+        let Some(current) = current else {
+            return RuntimeRefreshMode::OpenRuntime;
+        };
+        if current.same_wallpaper(desired) && current.display == desired.display {
+            return RuntimeRefreshMode::Unchanged;
+        }
+        if current.same_wallpaper(desired) {
+            if current.display.has_same_render_surface(&desired.display) {
+                return RuntimeRefreshMode::UpdateWindowOnly;
+            }
+            return RuntimeRefreshMode::ReopenRuntime;
+        }
+        RuntimeRefreshMode::RebuildExistingRuntime
+    }
+
+    /// Returns true if the transition requires a runtime refresh.
+    pub fn is_required(self) -> bool {
+        self != RuntimeRefreshMode::Unchanged
+    }
+}
+
+impl SceneRuntime {
+    pub fn open(
+        backend: OweBackend,
+        desc: &SceneDesc,
+        state: SceneRuntimeState,
+    ) -> Result<Self, EngineError> {
+        let window = WallpaperWindow::builder(desc.display.clone()).open()?;
+        let renderer = backend.open_scene(
+            desc,
+            window.metal_layer_ptr(),
+            state.scaling_mode,
+            state.scaling_factor,
+            state.render_resolution,
+        )?;
+        let descriptor_state = SceneRuntimeState::try_from(desc)?;
+        let mut runtime = Self {
+            desc: desc.clone(),
+            renderer,
+            scaling_mode: state.scaling_mode,
+            scaling_factor: state.scaling_factor,
+            render_resolution: state.render_resolution,
+            audio_response_enabled: state.audio_response_enabled,
+            paused: state.paused,
+            audio_volume: state.audio_volume,
+            audio_muted: state.audio_muted,
+            property_override_json: state.property_override_json,
+            window: Some(window),
+        };
+        runtime.apply_runtime_properties(&descriptor_state)?;
+        Ok(runtime)
+    }
+
+    pub fn set_scaling_mode(&mut self, mode: ScalingMode) -> Result<(), EngineError> {
+        self.renderer.set_scaling_mode(mode)?;
+        self.scaling_mode = mode;
+        self.desc.scaling_mode = mode;
+        Ok(())
+    }
+
+    pub fn set_scaling_factor(&mut self, factor: f64) -> Result<(), EngineError> {
+        self.renderer.set_scaling_factor(factor)?;
+        self.scaling_factor = factor;
+        self.desc.scaling_factor = factor;
+        Ok(())
+    }
+
+    pub fn set_fps(&mut self, fps: u32) -> Result<(), EngineError> {
+        self.renderer.set_target_fps(fps)?;
+        self.desc.fps = fps;
+        Ok(())
+    }
+
+    pub fn set_paused(&mut self, paused: bool) -> Result<(), EngineError> {
+        self.renderer.set_paused(paused)?;
+        self.paused = paused;
+        Ok(())
+    }
+
+    pub fn set_render_resolution(
+        &mut self,
+        backend: OweBackend,
+        width: u32,
+        height: u32,
+    ) -> Result<(), EngineError> {
+        self.rebuild_for_desc(backend, self.desc.clone(), Some((width, height)))
+    }
+
+    fn rebuild_for_desc(
+        &mut self,
+        backend: OweBackend,
+        desc: SceneDesc,
+        render_resolution: Option<(u32, u32)>,
+    ) -> Result<(), EngineError> {
+        let state = self.runtime_state();
+        let descriptor_state = SceneRuntimeState::try_from(&desc)?;
+        let old_display = self.desc.display.clone();
+        let window = self.window.as_mut().ok_or_else(|| {
+            EngineError::Platform("wallpaper window is already closed".to_string())
+        })?;
+
+        // Swap the CAMetalLayer BEFORE creating the new OWE scene so that
+        // each SceneWallpaper's VkSurface references its own CAMetalLayer.
+        // If we reused the old layer via `update_display`, the new VkSurface
+        // would be created on the same CAMetalLayer that the old VkSurface
+        // still references (it's destroyed only in `old_renderer.close()`
+        // below), violating the VK_EXT_metal_surface invariant that only
+        // one VkSurfaceKHR can be associated with a CAMetalLayer at a time.
+        //
+        // The old CAMetalLayer remains alive via MoltenVK's retain through
+        // the old VkSurface, and is deallocated when `old_renderer.close()`
+        // destroys that surface.
+        let metal_layer = window.update_layer(desc.display.clone())?;
+
+        let mut renderer = match backend.open_scene(
+            &desc,
+            metal_layer,
+            self.scaling_mode,
+            self.scaling_factor,
+            render_resolution,
+        ) {
+            Ok(renderer) => renderer,
+            Err(error) => {
+                // Best-effort geometry rollback. The layer swap is not reversible
+                // without creating yet another new layer, so we restore the
+                // NSWindow/NSView frames to the old display's geometry instead.
+                let _ = window.update_display(old_display);
+                return Err(error);
+            }
+        };
+        if let Err(error) = state.apply_to(&mut renderer, &descriptor_state) {
+            let _ = renderer.close();
+            let _ = window.update_display(old_display);
+            return Err(error);
+        }
+        let mut old_renderer = std::mem::replace(&mut self.renderer, renderer);
+        self.desc = desc;
+        self.render_resolution = render_resolution;
+        old_renderer.close()
+    }
+
+    pub fn replace_wallpaper(
+        &mut self,
+        backend: OweBackend,
+        desc: SceneDesc,
+    ) -> Result<(), EngineError> {
+        self.rebuild_for_desc(backend, desc, self.render_resolution)
+    }
+
+    pub fn resize_or_rebuild(
+        &mut self,
+        backend: OweBackend,
+        display: DisplayDesc,
+    ) -> Result<(), EngineError> {
+        if self.desc.display == display {
+            return Ok(());
+        }
+        // Note: the fast surface-reconfigure transaction lives in
+        // `run_runtime_refresh_job`'s `ReopenRuntime` branch, not here. This
+        // method is reached only from `RebuildExistingRuntime`, which by
+        // construction means wallpaper-defining fields have changed and a
+        // full scene rebuild is required.
+        let mut desc = self.desc.clone();
+        desc.display = display;
+        self.rebuild_for_desc(backend, desc, self.render_resolution)
+    }
+
+    pub fn update_window_display(&mut self, display: DisplayDesc) -> Result<(), EngineError> {
+        let window = self.window.as_mut().ok_or_else(|| {
+            EngineError::Platform("scene runtime has no window during display update".to_string())
+        })?;
+        window.update_display(display.clone())?;
+        self.desc.display = display;
+        Ok(())
+    }
+
+    /// Fast-path display reconfiguration. Preserves scene, shaders, render
+    /// graph, audio, and runtime state; only the Vulkan surface, swapchain,
+    /// and presentation passes are rebuilt.
+    ///
+    /// On any failure, returns `Err`; the caller should fall back to
+    /// `rebuild_for_desc`.
+    pub fn reconfigure_for_display(
+        &mut self,
+        backend: OweBackend,
+        display: DisplayDesc,
+    ) -> Result<(), EngineError> {
+        let _ = backend; // retained in signature for symmetry with rebuild_for_desc
+        let start = std::time::Instant::now();
+        let runtime_state = self.runtime_state();
+
+        // 1. Pause rendering and release the renderer-side surface.
+        self.renderer.begin_surface_reconfigure()?;
+
+        // 2. Swap the CAMetalLayer under the existing NSWindow.
+        let window = self.window.as_mut().ok_or_else(|| {
+            EngineError::Platform("scene runtime has no window during reconfigure".to_string())
+        })?;
+        let metal_layer = window.update_layer(display.clone())?;
+
+        // 3. Compute render resolution from the new display, or keep explicit override
+        //    if one was set.
+        let (render_width, render_height) = self
+            .render_resolution
+            .unwrap_or((display.width, display.height));
+
+        // 4. Rebuild the Vulkan surface + swapchain + presentation passes from the new
+        //    layer, and resume rendering.
+        self.renderer.finish_surface_reconfigure(
+            metal_layer,
+            display.width,
+            display.height,
+            render_width,
+            render_height,
+            display.scale_factor,
+        )?;
+
+        // 5. OWE resumes after finishing the surface transaction. Preserve an
+        //    already-paused runtime by restoring that state before returning.
+        if runtime_state.requires_pause_restore_after_surface_reconfigure() {
+            self.renderer.set_paused(true)?;
+        }
+
+        // 6. Commit the new descriptor.
+        self.desc.display = display;
+        eprintln!(
+            "[wallpaper-core engine] display reconfigure completed in {:?}",
+            start.elapsed()
+        );
+        Ok(())
+    }
+
+    pub fn set_audio_response_enabled(&mut self, enabled: bool) -> Result<(), EngineError> {
+        self.renderer.set_audio_response_enabled(enabled)?;
+        self.audio_response_enabled = enabled;
+        Ok(())
+    }
+
+    pub fn set_audio_volume(&mut self, volume: AudioVolume) -> Result<(), EngineError> {
+        self.renderer.set_audio_volume(volume)?;
+        self.audio_volume = volume;
+        Ok(())
+    }
+
+    pub fn set_audio_muted(&mut self, muted: bool) -> Result<(), EngineError> {
+        self.renderer.set_audio_muted(muted)?;
+        self.audio_muted = muted;
+        Ok(())
+    }
+
+    pub fn set_property_override_json(
+        &mut self,
+        flat_json: Option<String>,
+    ) -> Result<(), EngineError> {
+        if let Some(json) = flat_json.as_deref() {
+            self.renderer.set_property_override(json)?;
+        } else {
+            self.renderer.reset_property_override()?;
+        }
+        self.property_override_json = flat_json;
+        Ok(())
+    }
+
+    pub fn close(&mut self) -> Result<(), EngineError> {
+        let backend_result = self.renderer.close();
+        if let Some(mut window) = self.window.take() {
+            window.close();
+        }
+        backend_result
+    }
+
+    pub fn runtime_state(&self) -> SceneRuntimeState {
+        SceneRuntimeState {
+            scaling_mode: self.scaling_mode,
+            scaling_factor: self.scaling_factor,
+            render_resolution: self.render_resolution,
+            audio_response_enabled: self.audio_response_enabled,
+            paused: self.paused,
+            audio_volume: self.audio_volume,
+            audio_muted: self.audio_muted,
+            property_override_json: self.property_override_json.clone(),
+        }
+    }
+
+    fn apply_runtime_properties(
+        &mut self,
+        descriptor_state: &SceneRuntimeState,
+    ) -> Result<(), EngineError> {
+        let state = self.runtime_state();
+        state.apply_to(&mut self.renderer, descriptor_state)
+    }
+}
+
+impl Drop for SceneRuntime {
+    fn drop(&mut self) {
+        let _ = self.close();
+    }
+}
+
+impl SceneRuntimeState {
+    fn apply_to(
+        &self,
+        renderer: &mut OweScene,
+        descriptor_state: &SceneRuntimeState,
+    ) -> Result<(), EngineError> {
+        if self.paused != descriptor_state.paused {
+            renderer.set_paused(self.paused)?;
+        }
+        if self.audio_response_enabled != descriptor_state.audio_response_enabled {
+            renderer.set_audio_response_enabled(self.audio_response_enabled)?;
+        }
+        if self.audio_volume != descriptor_state.audio_volume {
+            renderer.set_audio_volume(self.audio_volume)?;
+        }
+        if self.audio_muted != descriptor_state.audio_muted {
+            renderer.set_audio_muted(self.audio_muted)?;
+        }
+        match self.property_override_update(descriptor_state) {
+            PropertyOverrideUpdate::Unchanged => {}
+            PropertyOverrideUpdate::Apply(json) => renderer.set_property_override(json)?,
+            PropertyOverrideUpdate::Reset => renderer.reset_property_override()?,
+        }
+        Ok(())
+    }
+
+    fn property_override_update<'a>(
+        &'a self,
+        descriptor_state: &SceneRuntimeState,
+    ) -> PropertyOverrideUpdate<'a> {
+        match (
+            self.property_override_json.as_deref(),
+            descriptor_state.property_override_json.as_deref(),
+        ) {
+            (runtime, descriptor) if runtime == descriptor => PropertyOverrideUpdate::Unchanged,
+            (Some(json), _) => PropertyOverrideUpdate::Apply(json),
+            (None, Some(_)) => PropertyOverrideUpdate::Reset,
+            (None, None) => PropertyOverrideUpdate::Unchanged,
+        }
+    }
+
+    fn requires_pause_restore_after_surface_reconfigure(&self) -> bool {
+        self.paused
+    }
+}
+
+impl TryFrom<&SceneDesc> for SceneRuntimeState {
+    type Error = EngineError;
+
+    fn try_from(desc: &SceneDesc) -> Result<Self, Self::Error> {
+        // Descriptor values seed runtime state only for first open. Later
+        // reconciliations keep explicit API changes such as property overrides.
+        Ok(Self {
+            scaling_mode: desc.scaling_mode,
+            scaling_factor: desc.scaling_factor,
+            render_resolution: None,
+            audio_response_enabled: desc.audio_response_enabled,
+            paused: desc.paused,
+            audio_volume: desc.audio_volume,
+            audio_muted: desc.audio_muted,
+            property_override_json: desc
+                .property_override_json
+                .as_deref()
+                .map(|json| {
+                    let flat_json = serde_json::from_str::<Value>(json)
+                        .map_err(|e| EngineError::InvalidInput(e.to_string()))?
+                        .flatten()?;
+                    serde_json::to_string(&flat_json)
+                        .map_err(|e| EngineError::InvalidInput(e.to_string()))
+                })
+                .transpose()?,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scene_runtime_state_initial_uses_descriptor_pause_state() {
+        let desc = crate::project::SceneDesc::builder(
+            crate::DisplayDesc::new(1, 0, 0, 1920, 1080, 1.0),
+            "/tmp/project.json",
+        )
+        .assets_path("/tmp/assets")
+        .paused(true)
+        .build()
+        .expect("scene should build");
+
+        let state = SceneRuntimeState::try_from(&desc).expect("state should build");
+
+        assert!(state.paused);
+    }
+
+    #[test]
+    fn property_override_delta_keeps_matching_empty_override_unchanged() {
+        let state = runtime_state(None);
+        let descriptor_state = runtime_state(None);
+
+        assert!(matches!(
+            state.property_override_update(&descriptor_state),
+            PropertyOverrideUpdate::Unchanged
+        ));
+    }
+
+    #[test]
+    fn property_override_delta_resets_only_when_descriptor_supplies_override() {
+        let state = runtime_state(None);
+        let descriptor_state = runtime_state(Some(r#"{"enabled":true}"#));
+
+        assert!(matches!(
+            state.property_override_update(&descriptor_state),
+            PropertyOverrideUpdate::Reset
+        ));
+    }
+
+    #[test]
+    fn property_override_delta_applies_runtime_override_when_different() {
+        let state = runtime_state(Some(r#"{"enabled":false}"#));
+        let descriptor_state = runtime_state(Some(r#"{"enabled":true}"#));
+
+        assert!(matches!(
+            state.property_override_update(&descriptor_state),
+            PropertyOverrideUpdate::Apply(r#"{"enabled":false}"#)
+        ));
+    }
+
+    #[test]
+    fn paused_runtime_requires_pause_restore_after_surface_reconfigure() {
+        let mut state = runtime_state(None);
+        state.paused = true;
+
+        assert!(state.requires_pause_restore_after_surface_reconfigure());
+    }
+
+    #[test]
+    fn running_runtime_does_not_require_pause_restore_after_surface_reconfigure() {
+        let state = runtime_state(None);
+
+        assert!(!state.requires_pause_restore_after_surface_reconfigure());
+    }
+
+    fn runtime_state(property_override_json: Option<&str>) -> SceneRuntimeState {
+        SceneRuntimeState {
+            scaling_mode: ScalingMode::Fit,
+            scaling_factor: 1.0,
+            render_resolution: None,
+            audio_response_enabled: true,
+            paused: false,
+            audio_volume: AudioVolume::try_from(1.0).expect("volume should be valid"),
+            audio_muted: false,
+            property_override_json: property_override_json.map(ToOwned::to_owned),
+        }
+    }
+}

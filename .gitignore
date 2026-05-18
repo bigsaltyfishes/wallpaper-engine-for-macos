@@ -1,0 +1,7 @@
+references/
+build/
+target/
+unpack/
+dist/
+.direnv/
+**/.DS_Store

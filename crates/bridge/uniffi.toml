@@ -1,0 +1,4 @@
+[bindings.swift]
+module_name = "WallpaperBridge"
+ffi_module_name = "WallpaperBridgeFFI"
+generate_module_map = true

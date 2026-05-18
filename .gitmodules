@@ -1,0 +1,3 @@
+[submodule "external/open-wallpaper-engine"]
+	path = external/open-wallpaper-engine
+	url = https://github.com/bigsaltyfishes/open-wallpaper-engine.git

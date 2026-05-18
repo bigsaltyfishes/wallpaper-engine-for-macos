@@ -1,0 +1,16 @@
+mod activation_plan;
+mod api_smoke;
+mod apply_options;
+mod bridge_intents;
+mod display_validation;
+mod filter_snapshot;
+mod library_scan;
+mod library_selection;
+mod persistence_corruption;
+mod persistence_round_trip;
+mod playback;
+mod production_constructor;
+mod project_parse;
+mod property_snapshot;
+mod settings_intents;
+mod wallpaper_options_draft;
