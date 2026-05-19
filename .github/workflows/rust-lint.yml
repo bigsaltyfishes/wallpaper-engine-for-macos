@@ -23,12 +23,12 @@ jobs:
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: '26.5'
+          xcode-version: '26.4.1'
 
       - name: Install Nix
-        uses: nixbuild/nix-quick-install-action@v30
+        uses: cachix/install-nix-action@v31
         with:
-          nix_conf: |
+          extra_nix_config: |
             experimental-features = nix-command flakes
             keep-env-derivations = true
             keep-outputs = true
