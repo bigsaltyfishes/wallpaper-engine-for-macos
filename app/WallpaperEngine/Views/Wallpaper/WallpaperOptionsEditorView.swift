@@ -10,6 +10,7 @@ struct WallpaperOptionsEditorView: View {
     var showsActions = true
     var scrollsContent = true
     var onError: (Error) -> Void = { _ in }
+    var onApply: (BridgeWallpaperOptionsSnapshot) -> Void = { _ in }
 
     @State private var displayExpanded = false
     @State private var generalExpanded = false
@@ -56,6 +57,11 @@ struct WallpaperOptionsEditorView: View {
                         performAsyncBridgeAction {
                             try await commitPendingDisplayEdits()
                             try await store.applyWallpaperOptionsAsync(wallpaperId: options.wallpaperId)
+                            if let updatedOptions = store.wallpaperOptionsSnapshot,
+                               updatedOptions.wallpaperId == options.wallpaperId
+                            {
+                                onApply(updatedOptions)
+                            }
                         }
                     }
                     .buttonStyle(.borderedProminent)

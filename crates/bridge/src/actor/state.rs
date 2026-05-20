@@ -142,10 +142,11 @@ impl BridgeActorState {
         primary_identity_selector: Option<&SerializedSelector>,
     ) -> Result<ApplyCandidates, BridgeError> {
         let draft = self.wallpaper_draft(wallpaper_id)?;
-        let requires_reconcile = draft.requires_reconcile();
+        let active_enabled_displays = self.enabled_selectors(wallpaper_id);
+        let requires_reconcile = draft.requires_reconcile(&active_enabled_displays);
         let wallpaper_config = draft.current().clone();
         let mut wallpaper_config = wallpaper_config;
-        let enabled_displays = draft.enabled_displays().to_vec();
+        let enabled_displays = draft.effective_enabled_displays(&active_enabled_displays);
         let mut app_config = self.app_config.clone();
 
         for monitor in &mut app_config.monitors {

@@ -86,6 +86,7 @@ impl BridgeActorState {
             })
             .unwrap_or_default();
         let app_config = self.app_config.normalized(displays);
+        let active_enabled_displays = self.enabled_selectors(&wallpaper_id);
         let display_configurations = app_config
             .monitor_rows(displays)
             .into_iter()
@@ -115,7 +116,7 @@ impl BridgeActorState {
                 Some(BridgeDisplayConfigRow {
                     display_id: selector.id(),
                     title: display.title_with_role(primary),
-                    enabled: draft.display_enabled(selector),
+                    enabled: draft.effective_display_enabled(selector, &active_enabled_displays),
                     scaling_mode: match render.parse_scaling_mode() {
                         ScalingMode::None => BridgeScalingMode::None,
                         ScalingMode::Stretch => BridgeScalingMode::Stretch,
@@ -125,9 +126,9 @@ impl BridgeActorState {
                     scaling_factor: render.scaling_factor,
                     target_fps: render.fps.min(max_fps),
                     max_fps,
-                    dirty: render_dirty || draft.display_enabled_dirty(selector),
+                    dirty: render_dirty || draft.display_dirty(selector, &active_enabled_displays),
                     can_restore_defaults: render != &default_render
-                        || draft.display_enabled_dirty(selector),
+                        || draft.display_dirty(selector, &active_enabled_displays),
                 })
             })
             .collect();
@@ -137,7 +138,7 @@ impl BridgeActorState {
             title: entry.title.clone(),
             kind: entry.kind,
             supported: entry.supported,
-            dirty: draft.is_dirty(),
+            dirty: draft.is_dirty(&active_enabled_displays),
             properties,
             display_configurations,
             audio_response_enabled: config.audio.response_enabled,

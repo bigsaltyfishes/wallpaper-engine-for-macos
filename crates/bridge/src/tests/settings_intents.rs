@@ -1668,6 +1668,116 @@ async fn applying_primary_wallpaper_keeps_identity_fallback_for_previous_primary
 }
 
 #[tokio::test]
+async fn wallpaper_options_report_display_disabled_when_another_wallpaper_owns_it() {
+    let bridge = two_wallpaper_primary_bridge().await;
+
+    bridge
+        .set_display_config_enabled("100".to_string(), "primary".to_string(), true)
+        .await
+        .unwrap();
+    bridge
+        .apply_wallpaper_options("100".to_string())
+        .await
+        .unwrap();
+
+    let set_a_before = bridge
+        .wallpaper_options_snapshot("100".to_string())
+        .await
+        .unwrap();
+    assert!(set_a_before.display_configurations[0].enabled);
+
+    bridge
+        .set_display_config_enabled("200".to_string(), "primary".to_string(), true)
+        .await
+        .unwrap();
+    bridge
+        .apply_wallpaper_options("200".to_string())
+        .await
+        .unwrap();
+
+    let set_a_after = bridge
+        .wallpaper_options_snapshot("100".to_string())
+        .await
+        .unwrap();
+    assert!(
+        !set_a_after.display_configurations[0].enabled,
+        "Set A must report Primary disabled when Primary is assigned to Set B"
+    );
+    assert!(
+        !set_a_after.display_configurations[0].dirty,
+        "reporting a conflicting global assignment should not create a Set A draft edit"
+    );
+    assert_eq!(
+        bridge.app_snapshot().await.unwrap().active_wallpaper_ids,
+        vec!["200".to_string()]
+    );
+}
+
+#[tokio::test]
+async fn wallpaper_options_keep_pending_enable_after_reselecting_wallpaper() {
+    let bridge = two_wallpaper_primary_bridge().await;
+    apply_primary_wallpaper(&bridge, "100").await;
+    apply_primary_wallpaper(&bridge, "200").await;
+
+    bridge
+        .set_display_config_enabled("100".to_string(), "primary".to_string(), true)
+        .await
+        .unwrap();
+    let set_a_pending = bridge
+        .wallpaper_options_snapshot("100".to_string())
+        .await
+        .unwrap();
+    assert!(set_a_pending.display_configurations[0].enabled);
+    assert!(
+        set_a_pending.display_configurations[0].dirty,
+        "turning Set A back on must become an explicit pending edit"
+    );
+
+    bridge.select_wallpaper("200".to_string()).await.unwrap();
+    bridge.select_wallpaper("100".to_string()).await.unwrap();
+    let set_a_reselected = bridge
+        .wallpaper_options_snapshot("100".to_string())
+        .await
+        .unwrap();
+    assert!(set_a_reselected.display_configurations[0].enabled);
+    assert!(
+        set_a_reselected.dirty,
+        "Set A should keep the user's pending enable draft after reselection"
+    );
+}
+
+#[tokio::test]
+async fn wallpaper_options_disable_draft_becomes_clean_when_another_wallpaper_owns_display() {
+    let bridge = two_wallpaper_primary_bridge().await;
+    apply_primary_wallpaper(&bridge, "100").await;
+    apply_primary_wallpaper(&bridge, "200").await;
+    bridge
+        .set_display_config_enabled("100".to_string(), "primary".to_string(), true)
+        .await
+        .unwrap();
+
+    bridge
+        .set_display_config_enabled("200".to_string(), "primary".to_string(), false)
+        .await
+        .unwrap();
+    bridge.select_wallpaper("100".to_string()).await.unwrap();
+    bridge
+        .apply_wallpaper_options("100".to_string())
+        .await
+        .unwrap();
+    bridge.select_wallpaper("200".to_string()).await.unwrap();
+    let set_b_reselected = bridge
+        .wallpaper_options_snapshot("200".to_string())
+        .await
+        .unwrap();
+    assert!(!set_b_reselected.display_configurations[0].enabled);
+    assert!(
+        !set_b_reselected.dirty,
+        "Set B should become clean when its pending disable matches active ownership"
+    );
+}
+
+#[tokio::test]
 async fn refresh_displays_does_not_empty_reconcile_primary_wallpaper_during_transient_empty_snapshot()
  {
     let display_a = identified_display("a", 1);
@@ -1770,6 +1880,43 @@ async fn settings_row(
         .into_iter()
         .find(|display| display.display_id == display_id)
         .unwrap_or_else(|| panic!("missing settings row for display {display_id}"))
+}
+
+async fn two_wallpaper_primary_bridge() -> WallpaperBridge {
+    let display = identified_display("primary", 1);
+    let root = tempfile::tempdir().unwrap();
+    let store = ConfigStore::open(root.path().to_path_buf());
+    store.save_app_config(&AppConfig::default()).unwrap();
+    for wallpaper_id in ["100", "200"] {
+        store
+            .save_wallpaper(&WallpaperConfig::new_for(wallpaper_id, "scene"))
+            .unwrap();
+    }
+
+    let engine = FakeEngineFacade::default();
+    engine.set_snapshot(vec![display]);
+    let bridge = BridgeBuilder::new(engine)
+        .with_config_store(ConfigStore::open(root.path().to_path_buf()))
+        .build()
+        .expect("tokio runtime and config load for wallpaper bridge");
+    bridge
+        .inject_scene_wallpaper_config_for_test("100", "Wallpaper Set A")
+        .await;
+    bridge
+        .inject_scene_wallpaper_config_for_test("200", "Wallpaper Set B")
+        .await;
+    bridge
+}
+
+async fn apply_primary_wallpaper(bridge: &WallpaperBridge, wallpaper_id: &str) {
+    bridge
+        .set_display_config_enabled(wallpaper_id.to_string(), "primary".to_string(), true)
+        .await
+        .unwrap();
+    bridge
+        .apply_wallpaper_options(wallpaper_id.to_string())
+        .await
+        .unwrap();
 }
 
 fn wait_for_reconcile_count(engine: &FakeEngineFacade, expected: usize) {

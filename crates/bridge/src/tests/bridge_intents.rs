@@ -343,6 +343,58 @@ async fn refresh_displays_reconciles_configured_wallpapers() {
 }
 
 #[tokio::test]
+async fn refresh_displays_skips_reconcile_when_configured_scenes_are_unchanged() {
+    let root = tempfile::tempdir().unwrap();
+    let store = ConfigStore::open(root.path().to_path_buf());
+    let mut config = AppConfig::default();
+    config.monitors.push(MonitorCfg {
+        selector: SerializedSelector::Primary,
+        enabled: true,
+        mode: "independent".to_string(),
+        wallpaper: Some("100".to_string()),
+        mirror_target: None,
+    });
+    store.save_app_config(&config).unwrap();
+    store
+        .save_wallpaper(&WallpaperConfig::new_for("100", "scene"))
+        .unwrap();
+
+    let display = display_snapshot(7, 75);
+    let engine = FakeEngineFacade::default();
+    engine.set_snapshot_after_refresh(vec![display.clone()]);
+    let bridge = BridgeBuilder::new(engine.clone())
+        .with_config_store(ConfigStore::open(root.path().to_path_buf()))
+        .build()
+        .expect("tokio runtime and config load for wallpaper bridge");
+    bridge
+        .inject_wallpaper_for_test("100", "Scene", BridgeWallpaperKind::ProjectScene)
+        .await;
+
+    bridge.refresh_displays().await.unwrap();
+    let calls = engine.calls();
+    assert_eq!(calls.len(), 1);
+
+    let rendered_scene = calls[0][0].clone();
+    engine.set_snapshot_after_refresh(vec![DisplaySnapshotEntry {
+        identity: display.identity,
+        desc: display.desc,
+        handle: Some(wallpaper_core::project::SceneHandle::new(1)),
+        window_active: true,
+        assignment: Some(WallpaperAssignment::Direct(SceneTemplate::from_scene_desc(
+            &rendered_scene,
+        ))),
+    }]);
+
+    bridge.refresh_displays().await.unwrap();
+
+    assert_eq!(
+        engine.calls().len(),
+        1,
+        "refreshing unchanged active display state must not rebuild the scene"
+    );
+}
+
+#[tokio::test]
 async fn refresh_displays_reconciles_configured_wallpaper_after_missing_display_returns() {
     let root = tempfile::tempdir().unwrap();
     let store = ConfigStore::open(root.path().to_path_buf());

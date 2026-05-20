@@ -40,6 +40,7 @@ struct DisplayInformationView: View {
         }
         .onChange(of: store.snapshotRevision) { _, _ in
             pruneCachedOptions()
+            reloadCachedOptions()
         }
     }
 
@@ -57,7 +58,10 @@ struct DisplayInformationView: View {
                 showsTitle: false,
                 showsActions: true,
                 scrollsContent: false,
-                onError: presentError
+                onError: presentError,
+                onApply: { updatedOptions in
+                    optionsByDisplayId[row.displayId] = updatedOptions
+                }
             )
             .padding(14)
             .background {
@@ -117,16 +121,34 @@ struct DisplayInformationView: View {
             return
         }
 
-        loadingDisplayIds.insert(displayId)
+        loadOptions(for: row, force: false)
+    }
+
+    private func loadOptions(for row: BridgeMonitorInfoRow, force: Bool) {
+        guard force || optionsByDisplayId[row.displayId] == nil else {
+            return
+        }
+        guard !loadingDisplayIds.contains(row.displayId) else {
+            return
+        }
+        if force,
+           let updatedOptions = store.wallpaperOptionsSnapshot,
+           updatedOptions.wallpaperId == row.wallpaperId
+        {
+            optionsByDisplayId[row.displayId] = updatedOptions
+            return
+        }
+
+        loadingDisplayIds.insert(row.displayId)
         Task {
             do {
                 let options = try await store.wallpaperOptionsSnapshotAsync(wallpaperId: row.wallpaperId)
-                optionsByDisplayId[displayId] = options
+                optionsByDisplayId[row.displayId] = options
                 presentedError = nil
             } catch {
                 presentError(error)
             }
-            loadingDisplayIds.remove(displayId)
+            loadingDisplayIds.remove(row.displayId)
         }
     }
 
@@ -157,6 +179,12 @@ struct DisplayInformationView: View {
         expandedDisplayIds.formIntersection(activeDisplayIds)
         optionsByDisplayId = optionsByDisplayId.filter { activeDisplayIds.contains($0.key) }
         loadingDisplayIds.formIntersection(activeDisplayIds)
+    }
+
+    private func reloadCachedOptions() {
+        for row in store.monitorInformationSnapshot.rows where optionsByDisplayId[row.displayId] != nil {
+            loadOptions(for: row, force: true)
+        }
     }
 
     private func presentError(_ error: Error) {

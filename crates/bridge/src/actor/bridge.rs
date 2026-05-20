@@ -473,7 +473,12 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
     async fn reconcile_configured(&mut self) -> Result<(), BridgeError> {
         self.load_wallpapers()?;
         let has_configured_wallpapers = !self.state.configured_ids().is_empty();
-        if !has_configured_wallpapers || self.engine.display_snapshot().is_empty() {
+        let displays = self.engine.display_snapshot();
+        if !has_configured_wallpapers || displays.is_empty() {
+            return Ok(());
+        }
+        if let Some(scenes) = self.unchanged_configured_scenes(&displays)? {
+            self.state.set_active_ids_from_scenes(&scenes);
             return Ok(());
         }
 
@@ -485,6 +490,50 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
         self.state.set_active_ids_from_scenes(&scenes);
         self.state.playback_state = crate::api::BridgePlaybackState::Playing;
         Ok(())
+    }
+
+    fn unchanged_configured_scenes(
+        &self,
+        displays: &[DisplaySnapshotEntry],
+    ) -> Result<Option<Vec<SceneDesc>>, BridgeError> {
+        let scenes = ActivationInputs {
+            app_config: &self.state.app_config,
+            wallpapers: &self.state.wallpaper_configs,
+            displays,
+            paused: self.playback_paused(),
+        }
+        .build()?;
+        let snapshot = self.engine.display_snapshot();
+        if scenes.len()
+            != snapshot
+                .iter()
+                .filter(|entry| {
+                    entry.window_active
+                        && matches!(entry.assignment, Some(WallpaperAssignment::Direct(_)))
+                })
+                .count()
+        {
+            return Ok(None);
+        }
+
+        if scenes.iter().all(|scene| {
+            snapshot.iter().any(|entry| {
+                entry.window_active
+                    && entry
+                        .assignment
+                        .as_ref()
+                        .is_some_and(|assignment| match assignment {
+                            WallpaperAssignment::Direct(template) => {
+                                template.for_display(scene.display.clone()) == *scene
+                            }
+                            WallpaperAssignment::Mirror(_) => false,
+                        })
+            })
+        }) {
+            Ok(Some(scenes))
+        } else {
+            Ok(None)
+        }
     }
 
     fn save_configs(
@@ -1658,9 +1707,23 @@ impl<E: EngineFacade + Clone> Message<SetDisplayConfigEnabled> for BridgeActor<E
     ) -> Self::Reply {
         let displays = self.engine.display_snapshot();
         let selector = self.selector_for(&msg.display_id, &displays)?;
+        let enabled_displays = self.state.enabled_selectors(&msg.wallpaper_id);
+        let mut selector_aliases = vec![selector.clone()];
+        if let Some(display) = selector.to_selector().resolve_display(&displays) {
+            if displays
+                .first()
+                .is_some_and(|primary| display.matches_primary(primary))
+            {
+                selector_aliases.push(SerializedSelector::Primary);
+            }
+            if let Some(identity_selector) = display.stable_identity_selector() {
+                selector_aliases.push(identity_selector);
+            }
+            selector_aliases.dedup();
+        }
         self.state
             .wallpaper_draft_mut(&msg.wallpaper_id)?
-            .set_display_enabled(selector, msg.enabled);
+            .set_display_aliases_enabled(&selector_aliases, msg.enabled, &enabled_displays);
         self.bump_generation();
         self.wallpaper_bundle(msg.wallpaper_id)
     }

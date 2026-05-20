@@ -39,20 +39,13 @@ impl WallpaperOptionsDraft {
     }
 
     #[must_use]
-    pub fn is_dirty(&self) -> bool {
-        self.current != self.committed
-            || !same_selector_set(
-                &self.current_enabled_displays,
-                &self.committed_enabled_displays,
-            )
+    pub fn is_dirty(&self, active_enabled_displays: &[SerializedSelector]) -> bool {
+        self.current != self.committed || self.enabled_dirty(active_enabled_displays)
     }
 
     #[must_use]
-    pub fn requires_reconcile(&self) -> bool {
-        !same_selector_set(
-            &self.current_enabled_displays,
-            &self.committed_enabled_displays,
-        ) || {
+    pub fn requires_reconcile(&self, active_enabled_displays: &[SerializedSelector]) -> bool {
+        self.enabled_dirty(active_enabled_displays) || {
             let mut current = self.current.clone();
             let mut committed = self.committed.clone();
             current.audio = committed.audio.clone();
@@ -121,14 +114,35 @@ impl WallpaperOptionsDraft {
         self.committed.clone()
     }
 
-    pub fn set_display_enabled(&mut self, selector: SerializedSelector, enabled: bool) {
+    pub fn set_display_enabled(
+        &mut self,
+        selector: SerializedSelector,
+        enabled: bool,
+        active_enabled_displays: &[SerializedSelector],
+    ) {
+        self.set_display_aliases_enabled(&[selector], enabled, active_enabled_displays);
+    }
+
+    pub fn set_display_aliases_enabled(
+        &mut self,
+        selectors: &[SerializedSelector],
+        enabled: bool,
+        active_enabled_displays: &[SerializedSelector],
+    ) {
+        if !self.enabled_displays_dirty() {
+            self.current_enabled_displays = active_enabled_displays.to_vec();
+            self.committed_enabled_displays = active_enabled_displays.to_vec();
+        }
+
         if enabled {
-            if !self.current_enabled_displays.contains(&selector) {
-                self.current_enabled_displays.push(selector);
+            for selector in selectors {
+                if !self.current_enabled_displays.contains(selector) {
+                    self.current_enabled_displays.push(selector.clone());
+                }
             }
         } else {
             self.current_enabled_displays
-                .retain(|candidate| candidate != &selector);
+                .retain(|candidate| !selectors.contains(candidate));
         }
     }
 
@@ -138,9 +152,14 @@ impl WallpaperOptionsDraft {
     }
 
     #[must_use]
-    pub fn display_enabled_dirty(&self, selector: &SerializedSelector) -> bool {
-        self.current_enabled_displays.contains(selector)
-            != self.committed_enabled_displays.contains(selector)
+    pub fn display_dirty(
+        &self,
+        selector: &SerializedSelector,
+        active_enabled_displays: &[SerializedSelector],
+    ) -> bool {
+        self.enabled_displays_dirty()
+            && self.current_enabled_displays.contains(selector)
+                != active_enabled_displays.contains(selector)
     }
 
     #[must_use]
@@ -152,6 +171,41 @@ impl WallpaperOptionsDraft {
         self.committed_enabled_displays
             .clone_from(&enabled_displays);
         self.current_enabled_displays = enabled_displays;
+    }
+
+    #[must_use]
+    pub fn effective_display_enabled(
+        &self,
+        selector: &SerializedSelector,
+        active_enabled_displays: &[SerializedSelector],
+    ) -> bool {
+        if self.display_dirty(selector, active_enabled_displays) {
+            return self.display_enabled(selector);
+        }
+        active_enabled_displays.contains(selector)
+    }
+
+    #[must_use]
+    pub fn effective_enabled_displays(
+        &self,
+        active_enabled_displays: &[SerializedSelector],
+    ) -> Vec<SerializedSelector> {
+        let mut selectors = self.current_enabled_displays.clone();
+        for selector in &self.committed_enabled_displays {
+            if !selectors.contains(selector) {
+                selectors.push(selector.clone());
+            }
+        }
+        for selector in active_enabled_displays {
+            if !selectors.contains(selector) {
+                selectors.push(selector.clone());
+            }
+        }
+
+        selectors
+            .into_iter()
+            .filter(|selector| self.effective_display_enabled(selector, active_enabled_displays))
+            .collect()
     }
 
     pub fn set_display_render_enabled(&mut self, selector: SerializedSelector, enabled: bool) {
@@ -275,8 +329,30 @@ impl WallpaperOptionsDraft {
             .last_mut()
             .expect("monitor render was just inserted")
     }
-}
 
-fn same_selector_set(left: &[SerializedSelector], right: &[SerializedSelector]) -> bool {
-    left.len() == right.len() && left.iter().all(|selector| right.contains(selector))
+    fn enabled_displays_dirty(&self) -> bool {
+        self.current_enabled_displays.len() != self.committed_enabled_displays.len()
+            || !self
+                .current_enabled_displays
+                .iter()
+                .all(|selector| self.committed_enabled_displays.contains(selector))
+    }
+
+    fn enabled_dirty(&self, active_enabled_displays: &[SerializedSelector]) -> bool {
+        let mut selectors = self.current_enabled_displays.clone();
+        for selector in &self.committed_enabled_displays {
+            if !selectors.contains(selector) {
+                selectors.push(selector.clone());
+            }
+        }
+        for selector in active_enabled_displays {
+            if !selectors.contains(selector) {
+                selectors.push(selector.clone());
+            }
+        }
+
+        selectors
+            .iter()
+            .any(|selector| self.display_dirty(selector, active_enabled_displays))
+    }
 }
