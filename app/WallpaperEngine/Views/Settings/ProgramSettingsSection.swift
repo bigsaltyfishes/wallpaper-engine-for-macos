@@ -5,29 +5,29 @@ struct ProgramSettingsSection: View {
     @State private var presentedError: BridgeErrorAlert?
     @State private var bridgeActionInProgress = false
     @State private var showingShaderCacheWarning = false
-    @State private var updateStatus: UpdateCheckStatus = .upToDate
+    @State private var updateStatus: UpdateCheckStatus = .notChecked
     @State private var availableUpdate: AvailableUpdate?
 
     var body: some View {
         Section("Program Settings") {
             LabeledContent {
-            Toggle("Launch at Login", isOn: Binding {
-                store.settingsSnapshot.launchAtLoginEnabled
-            } set: { enabled in
-                performAsyncBridgeAction {
-                    try await store.setLaunchAtLoginAsync(enabled: enabled)
-                }
-            })
+                Toggle("Launch at Login", isOn: Binding {
+                    store.settingsSnapshot.launchAtLoginEnabled
+                } set: { enabled in
+                    performAsyncBridgeAction {
+                        try await store.setLaunchAtLoginAsync(enabled: enabled)
+                    }
+                })
                 .labelsHidden()
                 .toggleStyle(.switch)
             } label: {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Launch at Login")
-            if !store.settingsSnapshot.launchAtLoginAvailable {
-                Text("Move Wallpaper Engine to Applications to enable launch at login.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+                    if !store.settingsSnapshot.launchAtLoginAvailable {
+                        Text("Move Wallpaper Engine to Applications to enable launch at login.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
             .disabled(!store.settingsSnapshot.launchAtLoginAvailable || bridgeActionInProgress)

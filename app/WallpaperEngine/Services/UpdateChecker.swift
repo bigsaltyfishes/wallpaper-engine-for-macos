@@ -5,16 +5,19 @@ private let repositorySlug = "bigsaltyfishes/wallpaper-engine-for-macos"
 let releasesPageURL = URL(string: "https://github.com/bigsaltyfishes/wallpaper-engine-for-macos/releases")!
 
 enum UpdateCheckStatus: Equatable {
+    case notChecked
     case upToDate
     case checking
     case updateAvailable
 
     var label: String {
         switch self {
+        case .notChecked:
+            "Updates not yet checked"
         case .upToDate:
             "Up to date"
         case .checking:
-            "Checking"
+            "Checking for updates..."
         case .updateAvailable:
             "Update available"
         }
