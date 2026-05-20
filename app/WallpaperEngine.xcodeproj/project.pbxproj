@@ -30,6 +30,8 @@
 		0A1000010000000000000022 /* WallpaperOptionsEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2000010000000000000026 /* WallpaperOptionsEditorView.swift */; };
 		0A1000010000000000000023 /* ProgramSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2000010000000000000027 /* ProgramSettingsSection.swift */; };
 		0A1000010000000000000024 /* StorageFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2000010000000000000028 /* StorageFormat.swift */; };
+		0A1000010000000000000025 /* UpdateAvailableWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2000010000000000000029 /* UpdateAvailableWindow.swift */; };
+		0A1000010000000000000026 /* UpdateChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2000010000000000000030 /* UpdateChecker.swift */; };
 		0A1000010000000000000027 /* AppLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2000010000000000000031 /* AppLog.swift */; };
 /* End PBXBuildFile section */
 
@@ -61,6 +63,8 @@
 		0A2000010000000000000026 /* WallpaperOptionsEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperOptionsEditorView.swift; sourceTree = "<group>"; };
 		0A2000010000000000000027 /* ProgramSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgramSettingsSection.swift; sourceTree = "<group>"; };
 		0A2000010000000000000028 /* StorageFormat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageFormat.swift; sourceTree = "<group>"; };
+		0A2000010000000000000029 /* UpdateAvailableWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateAvailableWindow.swift; sourceTree = "<group>"; };
+		0A2000010000000000000030 /* UpdateChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateChecker.swift; sourceTree = "<group>"; };
 		0A2000010000000000000031 /* AppLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLog.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -89,6 +93,7 @@
 				0A2000010000000000000001 /* WallpaperEngineApp.swift */,
 				0A2000010000000000000002 /* AppDelegate.swift */,
 				0A4000010000000000000003 /* Bridge */,
+				0A4000010000000000000014 /* Services */,
 				0A4000010000000000000015 /* Logging */,
 				0A4000010000000000000005 /* ViewModels */,
 				0A4000010000000000000006 /* Views */,
@@ -199,10 +204,19 @@
 				0A2000010000000000000021 /* SettingsView.swift */,
 				0A2000010000000000000027 /* ProgramSettingsSection.swift */,
 				0A2000010000000000000028 /* StorageFormat.swift */,
+				0A2000010000000000000029 /* UpdateAvailableWindow.swift */,
 				0A2000010000000000000022 /* DisplaySettingsSection.swift */,
 				0A2000010000000000000023 /* AboutSection.swift */,
 			);
 			path = Settings;
+			sourceTree = "<group>";
+		};
+		0A4000010000000000000014 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				0A2000010000000000000030 /* UpdateChecker.swift */,
+			);
+			path = Services;
 			sourceTree = "<group>";
 		};
 		0A4000010000000000000015 /* Logging */ = {
@@ -302,9 +316,11 @@
 				0A1000010000000000000018 /* SettingsView.swift in Sources */,
 				0A1000010000000000000023 /* ProgramSettingsSection.swift in Sources */,
 				0A1000010000000000000024 /* StorageFormat.swift in Sources */,
+				0A1000010000000000000025 /* UpdateAvailableWindow.swift in Sources */,
 				0A1000010000000000000019 /* DisplaySettingsSection.swift in Sources */,
 				0A1000010000000000000020 /* AboutSection.swift in Sources */,
 				0A1000010000000000000021 /* RichTextLabel.swift in Sources */,
+				0A1000010000000000000026 /* UpdateChecker.swift in Sources */,
 				0A1000010000000000000027 /* AppLog.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

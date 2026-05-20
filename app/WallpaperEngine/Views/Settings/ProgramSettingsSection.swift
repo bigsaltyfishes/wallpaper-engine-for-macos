@@ -5,6 +5,8 @@ struct ProgramSettingsSection: View {
     @State private var presentedError: BridgeErrorAlert?
     @State private var bridgeActionInProgress = false
     @State private var showingShaderCacheWarning = false
+    @State private var updateStatus: UpdateCheckStatus = .upToDate
+    @State private var availableUpdate: AvailableUpdate?
 
     var body: some View {
         Section("Program Settings") {
@@ -48,6 +50,20 @@ struct ProgramSettingsSection: View {
                     .disabled(bridgeActionInProgress)
                 }
             }
+
+            LabeledContent {
+                Button("Check for Updates") {
+                    checkForUpdates()
+                }
+                .disabled(updateStatus == .checking)
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Updates")
+                    Text(updateStatus.label)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
         .alert(item: $presentedError) { error in
             Alert(
@@ -71,6 +87,11 @@ struct ProgramSettingsSection: View {
             Text(
                 "Clearing the shader cache may temporarily reduce performance. Currently active scene wallpapers will be rebuilt to regenerate fresh shaders."
             )
+        }
+        .sheet(item: $availableUpdate) { update in
+            UpdateAvailableWindow(update: update) {
+                availableUpdate = nil
+            }
         }
     }
 
@@ -104,6 +125,29 @@ struct ProgramSettingsSection: View {
             try store.clearLogsAsync()
         } catch {
             presentedError = BridgeErrorAlert(error: error)
+        }
+    }
+
+    private func checkForUpdates() {
+        guard updateStatus != .checking else {
+            return
+        }
+
+        let previousStatus = updateStatus
+        updateStatus = .checking
+        Task {
+            do {
+                if let update = try await UpdateChecker().check(currentShortHash: store.settingsSnapshot.gitSha) {
+                    availableUpdate = update
+                    updateStatus = .updateAvailable
+                } else {
+                    updateStatus = .upToDate
+                }
+                presentedError = nil
+            } catch {
+                updateStatus = previousStatus == .checking ? .upToDate : previousStatus
+                presentedError = BridgeErrorAlert(error: error)
+            }
         }
     }
 }
