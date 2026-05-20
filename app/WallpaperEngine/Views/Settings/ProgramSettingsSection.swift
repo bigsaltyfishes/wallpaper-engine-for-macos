@@ -10,6 +10,7 @@ struct ProgramSettingsSection: View {
 
     var body: some View {
         Section("Program Settings") {
+            LabeledContent {
             Toggle("Launch at Login", isOn: Binding {
                 store.settingsSnapshot.launchAtLoginEnabled
             } set: { enabled in
@@ -17,13 +18,20 @@ struct ProgramSettingsSection: View {
                     try await store.setLaunchAtLoginAsync(enabled: enabled)
                 }
             })
-            .disabled(!store.settingsSnapshot.launchAtLoginAvailable || bridgeActionInProgress)
-
+                .labelsHidden()
+                .toggleStyle(.switch)
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Launch at Login")
             if !store.settingsSnapshot.launchAtLoginAvailable {
                 Text("Move Wallpaper Engine to Applications to enable launch at login.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+                }
+            }
+            .disabled(!store.settingsSnapshot.launchAtLoginAvailable || bridgeActionInProgress)
+
 
             LabeledContent {
                 Button("Clear") {
