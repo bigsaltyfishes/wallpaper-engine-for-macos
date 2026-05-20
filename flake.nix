@@ -84,7 +84,7 @@
         packages.default = pkgs.stdenv.mkDerivation {
           pname = "wallpaper-engine";
 
-          version = "0.1.0";
+          version = "0.1.1";
 
           src = ./.;
 
