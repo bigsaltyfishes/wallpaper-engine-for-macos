@@ -51,11 +51,10 @@ impl ConfigStore {
             Err(error) => {
                 let backup = backup_corrupted(&path)?;
                 let config = AppConfig::default();
-                tracing::warn!(
-                    path = %path.display(),
-                    backup = %backup.display(),
-                    error = %error,
-                    "backed up unreadable app config"
+                log::warn!(
+                    "backed up unreadable app config path={} backup={} error={error}",
+                    path.display(),
+                    backup.display()
                 );
                 return Ok(ConfigLoad {
                     config,
@@ -82,11 +81,10 @@ impl ConfigStore {
             Err(error) => {
                 let backup = backup_corrupted(&path)?;
                 let config = AppConfig::default();
-                tracing::warn!(
-                    path = %path.display(),
-                    backup = %backup.display(),
-                    error = %error,
-                    "backed up corrupted app config"
+                log::warn!(
+                    "backed up corrupted app config path={} backup={} error={error}",
+                    path.display(),
+                    backup.display()
                 );
                 Ok(ConfigLoad {
                     config,

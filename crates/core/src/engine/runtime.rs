@@ -303,7 +303,7 @@ impl SceneRuntime {
 
         // 6. Commit the new descriptor.
         self.desc.display = display;
-        eprintln!(
+        log::debug!(
             "[wallpaper-core engine] display reconfigure completed in {:?}",
             start.elapsed()
         );

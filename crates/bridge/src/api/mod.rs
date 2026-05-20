@@ -7,11 +7,12 @@ pub use error::{BridgeError, BridgeErrorKind};
 use futures_util::Future;
 pub use types::{
     BridgeAppSnapshot, BridgeDisplayConfigRow, BridgeDisplayMode, BridgeDisplayMutationBundle,
-    BridgeDisplaySettingsRow, BridgeLibraryScanStatus, BridgeLibrarySnapshot, BridgeMonitorInfoRow,
-    BridgeMonitorInformationSnapshot, BridgePlaybackState, BridgePropertyDescriptor,
-    BridgePropertyKind, BridgePropertyValue, BridgeScalingMode, BridgeSettingsSnapshot,
-    BridgeSliderMetadata, BridgeSnapshotBundle, BridgeWallpaperEntry, BridgeWallpaperKind,
-    BridgeWallpaperMutationBundle, BridgeWallpaperOptionsSnapshot,
+    BridgeDisplaySettingsRow, BridgeLibraryScanStatus, BridgeLibrarySnapshot, BridgeLogLevel,
+    BridgeLogStatus, BridgeMonitorInfoRow, BridgeMonitorInformationSnapshot, BridgePlaybackState,
+    BridgePropertyDescriptor, BridgePropertyKind, BridgePropertyValue, BridgeScalingMode,
+    BridgeSettingsSnapshot, BridgeSliderMetadata, BridgeSnapshotBundle, BridgeStorageStatus,
+    BridgeWallpaperEntry, BridgeWallpaperKind, BridgeWallpaperMutationBundle,
+    BridgeWallpaperOptionsSnapshot,
 };
 use wallpaper_core::{
     DisplaySelector, WallpaperAssignment, WallpaperEngine,
@@ -45,13 +46,24 @@ use crate::{
     config::ConfigStore,
     engine::{EngineFacade, RealEngineFacade},
     login::LaunchAtLoginController,
+    paths::BridgePaths,
 };
+
+pub(crate) fn bridge_log_status(status: crate::logging::LogStatus) -> BridgeLogStatus {
+    BridgeLogStatus {
+        logs_root: status.logs_root.to_string_lossy().into_owned(),
+        active_session: status.active_session,
+        active_file: status.active_file.to_string_lossy().into_owned(),
+        active_file_size_bytes: status.active_file_size_bytes,
+    }
+}
 
 pub struct BridgeBuilder<E: EngineFacade> {
     engine: E,
     state: Option<BridgeActorState>,
     config_store: Option<ConfigStore>,
     launch_at_login: LaunchAtLoginController,
+    paths: BridgePaths,
 }
 
 impl<E: EngineFacade> BridgeBuilder<E> {
@@ -62,6 +74,7 @@ impl<E: EngineFacade> BridgeBuilder<E> {
             state: None,
             config_store: None,
             launch_at_login: LaunchAtLoginController::default(),
+            paths: BridgePaths::new(),
         }
     }
 
@@ -73,6 +86,11 @@ impl<E: EngineFacade> BridgeBuilder<E> {
 
     pub fn with_config_store(mut self, config_store: ConfigStore) -> Self {
         self.config_store = Some(config_store);
+        self
+    }
+
+    pub fn with_paths(mut self, paths: BridgePaths) -> Self {
+        self.paths = paths;
         self
     }
 
@@ -103,6 +121,7 @@ impl<E: EngineFacade> BridgeBuilder<E> {
                 ArcEngineFacade::new(self.engine),
                 self.config_store.clone(),
                 self.launch_at_login,
+                self.paths,
             )?,
             _config_store: self.config_store,
         })
@@ -241,11 +260,14 @@ impl WallpaperBridge {
     /// Returns an error when the native engine cannot start or persisted
     /// configuration cannot load.
     pub fn new() -> Result<Self, BridgeError> {
+        let paths = BridgePaths::new();
+        crate::logging::ApplicationLogger::install(&paths)?;
         let engine =
             WallpaperEngine::new().map_err(|error| BridgeError::engine(error.to_string()))?;
 
         BridgeBuilder::new(RealEngineFacade::new(engine))
             .with_config_store(ConfigStore::open(ConfigStore::default_root()))
+            .with_paths(paths)
             .build()
     }
 
@@ -279,6 +301,47 @@ impl WallpaperBridge {
     /// Returns an error when the bridge actor cannot produce settings.
     pub async fn settings_snapshot(&self) -> Result<BridgeSettingsSnapshot, BridgeError> {
         self.actor.ask(GetSettingsSnapshot).await
+    }
+
+    /// # Errors
+    ///
+    /// Returns an error when GUI log emission cannot be accepted.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn emit_gui_log(
+        &self,
+        level: BridgeLogLevel,
+        file: String,
+        line: u32,
+        message: String,
+    ) -> Result<(), BridgeError> {
+        let level = match level {
+            BridgeLogLevel::Trace => log::Level::Trace,
+            BridgeLogLevel::Debug => log::Level::Debug,
+            BridgeLogLevel::Info => log::Level::Info,
+            BridgeLogLevel::Warn => log::Level::Warn,
+            BridgeLogLevel::Error => log::Level::Error,
+        };
+        crate::logging::ApplicationLogger::emit_gui_log(level, &file, line, &message);
+        Ok(())
+    }
+
+    /// # Errors
+    ///
+    /// Returns an error when the logger has not been installed.
+    pub fn log_folder_path(&self) -> Result<String, BridgeError> {
+        crate::logging::ApplicationLogger::logs_root()
+            .map(|path| path.to_string_lossy().into_owned())
+            .ok_or_else(|| BridgeError::Error {
+                kind: BridgeErrorKind::Io,
+                message: "application logger is not installed".to_string(),
+            })
+    }
+
+    /// # Errors
+    ///
+    /// Returns an error when a new log session cannot be created.
+    pub fn clear_logs(&self) -> Result<BridgeLogStatus, BridgeError> {
+        crate::logging::ApplicationLogger::clear().map(bridge_log_status)
     }
 
     /// # Errors

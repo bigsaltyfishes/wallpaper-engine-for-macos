@@ -64,4 +64,43 @@ impl BridgePaths {
     pub fn shader_cache_root(&self) -> PathBuf {
         self.app_support_root().join("shader-cache")
     }
+
+    #[must_use]
+    pub fn logs_root(&self) -> PathBuf {
+        self.app_support_root().join("Logs")
+    }
+
+    #[must_use]
+    pub fn log_session_root(&self, start_time: &str) -> PathBuf {
+        self.logs_root().join(start_time)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{BUNDLE_IDENTIFIER, BridgePaths};
+
+    #[test]
+    fn logs_root_lives_under_app_support() {
+        let paths = BridgePaths::for_home("/Users/example");
+
+        assert_eq!(
+            paths.logs_root(),
+            std::path::PathBuf::from("/Users/example")
+                .join("Library")
+                .join("Application Support")
+                .join(BUNDLE_IDENTIFIER)
+                .join("Logs")
+        );
+    }
+
+    #[test]
+    fn log_session_root_appends_session_name() {
+        let paths = BridgePaths::for_home("/Users/example");
+
+        assert_eq!(
+            paths.log_session_root("20260520-120000"),
+            paths.logs_root().join("20260520-120000")
+        );
+    }
 }

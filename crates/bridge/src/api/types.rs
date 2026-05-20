@@ -170,6 +170,29 @@ pub struct BridgeDisplaySettingsRow {
     pub selected_mirror_target: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum BridgeLogLevel {
+    Trace,
+    Debug,
+    Info,
+    Warn,
+    Error,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct BridgeLogStatus {
+    pub logs_root: String,
+    pub active_session: String,
+    pub active_file: String,
+    pub active_file_size_bytes: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct BridgeStorageStatus {
+    pub shader_cache_size_bytes: u64,
+    pub logs: BridgeLogStatus,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct BridgeSettingsSnapshot {
     pub displays: Vec<BridgeDisplaySettingsRow>,
@@ -179,6 +202,7 @@ pub struct BridgeSettingsSnapshot {
     pub git_sha: String,
     pub bridge_version: String,
     pub core_version: String,
+    pub storage: BridgeStorageStatus,
 }
 
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]

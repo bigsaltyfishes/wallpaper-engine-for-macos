@@ -609,7 +609,7 @@ impl DisplayStateModel {
 
     pub fn log_debug_transition(&self, before: &DisplayStateModel) {
         for event in self.debug_events_since(before) {
-            eprintln!("{}", event.debug_message());
+            log::debug!("{}", event.debug_message());
         }
     }
 }

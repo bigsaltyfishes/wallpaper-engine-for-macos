@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         BridgeEnvironment.configureVulkanICDIfNeeded()
         do {
             store = try BridgeStore()
+            AppLog.store = store
             startupError = nil
             playbackSnapshotCurrent = false
         } catch {

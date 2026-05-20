@@ -1,3 +1,5 @@
+use std::{fs, path::Path};
+
 use wallpaper_core::{DisplaySnapshotEntry, WallpaperAssignment, project::ScalingMode};
 
 use crate::{
@@ -6,11 +8,14 @@ use crate::{
         BridgeDisplayConfigRow, BridgeDisplayMode, BridgeDisplaySettingsRow, BridgeError,
         BridgeMonitorInfoRow, BridgeMonitorInformationSnapshot, BridgePropertyDescriptor,
         BridgePropertyKind, BridgePropertyValue, BridgeScalingMode, BridgeSettingsSnapshot,
-        BridgeSliderMetadata, BridgeWallpaperOptionsSnapshot,
+        BridgeSliderMetadata, BridgeStorageStatus, BridgeWallpaperOptionsSnapshot,
+        bridge_log_status,
     },
     config::SerializedSelector,
     display::{DisplayLabelExt, DisplaySnapshotExt},
+    logging::{ApplicationLogger, LogStatus},
     login::LaunchAtLoginStatus,
+    paths::BridgePaths,
     project::PropertyMetadata,
 };
 
@@ -23,6 +28,25 @@ fn build_value(value: &'static str, fallback: &'static str) -> String {
     } else {
         value.to_string()
     }
+}
+
+fn directory_size(path: &Path) -> u64 {
+    let Ok(metadata) = fs::metadata(path) else {
+        return 0;
+    };
+    if metadata.is_file() {
+        return metadata.len();
+    }
+    if !metadata.is_dir() {
+        return 0;
+    }
+
+    fs::read_dir(path)
+        .ok()
+        .into_iter()
+        .flat_map(|entries| entries.filter_map(Result::ok))
+        .map(|entry| directory_size(&entry.path()))
+        .sum()
 }
 
 impl BridgeActorState {
@@ -212,10 +236,12 @@ impl BridgeActorState {
         BridgeMonitorInformationSnapshot { rows }
     }
 
+    #[allow(clippy::too_many_lines)]
     pub fn settings(
         &self,
         displays: &[DisplaySnapshotEntry],
         launch_at_login: LaunchAtLoginStatus,
+        paths: &BridgePaths,
     ) -> BridgeSettingsSnapshot {
         let app_config = self.app_config.normalized(displays);
         let rows = if displays.is_empty() {
@@ -305,18 +331,66 @@ impl BridgeActorState {
             ),
             bridge_version: crate_version.clone(),
             core_version: crate_version,
+            storage: BridgeStorageStatus {
+                shader_cache_size_bytes: directory_size(&paths.shader_cache_root()),
+                logs: ApplicationLogger::status().map_or_else(
+                    || {
+                        bridge_log_status(LogStatus {
+                            logs_root: paths.logs_root(),
+                            active_session: String::new(),
+                            active_file: paths.logs_root().join("0.log"),
+                            active_file_size_bytes: 0,
+                        })
+                    },
+                    bridge_log_status,
+                ),
+            },
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::build_value;
+    use std::fs;
+
+    use super::{build_value, directory_size};
+    use crate::{login::LaunchAtLoginStatus, paths::BridgePaths};
 
     #[test]
     fn build_value_uses_fallback_for_empty_values() {
         assert_eq!(build_value("abc123", "fallback"), "abc123");
         assert_eq!(build_value("", "fallback"), "fallback");
         assert_eq!(build_value("   ", "fallback"), "fallback");
+    }
+
+    #[test]
+    fn directory_size_sums_nested_files() {
+        let root = tempfile::tempdir().unwrap();
+        let nested = root.path().join("nested");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(root.path().join("a.bin"), [1, 2, 3]).unwrap();
+        fs::write(nested.join("b.bin"), [4, 5]).unwrap();
+
+        assert_eq!(directory_size(root.path()), 5);
+    }
+
+    #[test]
+    fn settings_snapshot_reports_storage_status() {
+        let root = tempfile::tempdir().unwrap();
+        let paths = BridgePaths::for_home(root.path());
+        fs::create_dir_all(paths.shader_cache_root()).unwrap();
+        fs::write(paths.shader_cache_root().join("shader.bin"), [1, 2, 3, 4]).unwrap();
+
+        let snapshot = crate::actor::state::BridgeActorState::default().settings(
+            &[],
+            LaunchAtLoginStatus::Unavailable,
+            &paths,
+        );
+
+        assert_eq!(snapshot.storage.shader_cache_size_bytes, 4);
+        assert_eq!(
+            snapshot.storage.logs.logs_root,
+            paths.logs_root().to_string_lossy()
+        );
     }
 }

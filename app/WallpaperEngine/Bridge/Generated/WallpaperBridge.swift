@@ -529,28 +529,28 @@ fileprivate struct FfiConverterString: FfiConverter {
 
 
 public protocol WallpaperBridgeProtocol : AnyObject {
-
+    
     /**
      * # Errors
      *
      * Returns an error when any snapshot in the bundle cannot be produced.
      */
     func allSnapshots() async throws  -> BridgeSnapshotBundle
-
+    
     /**
      * # Errors
      *
      * Returns an error when the bridge actor cannot produce an app snapshot.
      */
     func appSnapshot() async throws  -> BridgeAppSnapshot
-
+    
     /**
      * # Errors
      *
      * Returns an error when pending options cannot be applied or persisted.
      */
     func applyWallpaperOptions(wallpaperId: String) async throws  -> BridgeWallpaperMutationBundle
-
+    
     /**
      * # Errors
      *
@@ -558,14 +558,29 @@ public protocol WallpaperBridgeProtocol : AnyObject {
      * reconciliation fails.
      */
     func bootstrap() async throws  -> BridgeSnapshotBundle
-
+    
     /**
      * # Errors
      *
      * Returns an error when the wallpaper id is unknown.
      */
     func cancelWallpaperOptions(wallpaperId: String) async throws  -> BridgeWallpaperMutationBundle
-
+    
+    /**
+     * # Errors
+     *
+     * Returns an error when a new log session cannot be created.
+     */
+    func clearLogs() throws  -> BridgeLogStatus
+    
+    /**
+     * # Errors
+     *
+     * Returns an error when the shader cache cannot be cleared or active
+     * scenes cannot be rebuilt.
+     */
+    func clearShaderCache() async throws  -> BridgeSettingsSnapshot
+    
     /**
      * # Errors
      *
@@ -573,7 +588,7 @@ public protocol WallpaperBridgeProtocol : AnyObject {
      * invalid.
      */
     func editProperty(wallpaperId: String, propertyId: String, value: BridgePropertyValue) async throws  -> BridgeWallpaperMutationBundle
-
+    
     /**
      * # Errors
      *
@@ -581,14 +596,21 @@ public protocol WallpaperBridgeProtocol : AnyObject {
      * scaling factor is invalid, or live engine update fails.
      */
     func editScalingFactor(wallpaperId: String, displayId: String, factor: Double) async throws  -> BridgeWallpaperMutationBundle
-
+    
     /**
      * # Errors
      *
      * Returns an error when the display update cannot be committed.
      */
     func ejectWallpaperFromDisplay(displayId: String, wallpaperId: String) async throws  -> BridgeDisplayMutationBundle
-
+    
+    /**
+     * # Errors
+     *
+     * Returns an error when GUI log emission cannot be accepted.
+     */
+    func emitGuiLog(level: BridgeLogLevel, file: String, line: UInt32, message: String) throws 
+    
     /**
      * # Errors
      *
@@ -596,7 +618,14 @@ public protocol WallpaperBridgeProtocol : AnyObject {
      * snapshot.
      */
     func librarySnapshot() async throws  -> BridgeLibrarySnapshot
-
+    
+    /**
+     * # Errors
+     *
+     * Returns an error when the logger has not been installed.
+     */
+    func logFolderPath() throws  -> String
+    
     /**
      * # Errors
      *
@@ -604,49 +633,49 @@ public protocol WallpaperBridgeProtocol : AnyObject {
      * information.
      */
     func monitorInformationSnapshot() async throws  -> BridgeMonitorInformationSnapshot
-
+    
     /**
      * # Errors
      *
      * Returns an error when pending options cannot be applied or persisted.
      */
     func okWallpaperOptions(wallpaperId: String) async throws  -> BridgeWallpaperMutationBundle
-
+    
     /**
      * # Errors
      *
      * Returns an error when the engine cannot pause all scenes.
      */
     func pauseAll() async throws  -> BridgeSnapshotBundle
-
+    
     /**
      * # Errors
      *
      * Returns an error when the engine cannot resume all scenes.
      */
     func playAll() async throws  -> BridgeSnapshotBundle
-
+    
     /**
      * # Errors
      *
      * Returns an error when display refresh fails.
      */
     func refreshDisplays() async throws  -> BridgeSnapshotBundle
-
+    
     /**
      * # Errors
      *
      * Returns an error when the library cannot be scanned.
      */
     func refreshLibrary() async throws  -> BridgeSnapshotBundle
-
+    
     /**
      * # Errors
      *
      * Returns an error when the wallpaper or property id is unknown.
      */
     func restorePropertyDefault(wallpaperId: String, propertyId: String) async throws  -> BridgeWallpaperMutationBundle
-
+    
     /**
      * # Errors
      *
@@ -654,21 +683,21 @@ public protocol WallpaperBridgeProtocol : AnyObject {
      * committed.
      */
     func selectWallpaper(id: String) async throws  -> BridgeSnapshotBundle
-
+    
     /**
      * # Errors
      *
      * Returns an error when the wallpaper id is unknown or persistence fails.
      */
     func setAudioResponseEnabled(wallpaperId: String, enabled: Bool) async throws  -> BridgeWallpaperMutationBundle
-
+    
     /**
      * # Errors
      *
      * Returns an error when the wallpaper or display id is unknown.
      */
     func setDisplayConfigEnabled(wallpaperId: String, displayId: String, enabled: Bool) async throws  -> BridgeWallpaperMutationBundle
-
+    
     /**
      * # Errors
      *
@@ -676,7 +705,7 @@ public protocol WallpaperBridgeProtocol : AnyObject {
      * fails.
      */
     func setDisplayEnabled(displayId: String, enabled: Bool) async throws  -> BridgeDisplayMutationBundle
-
+    
     /**
      * # Errors
      *
@@ -684,22 +713,22 @@ public protocol WallpaperBridgeProtocol : AnyObject {
      * fails.
      */
     func setDisplayMode(displayId: String, mode: BridgeDisplayMode) async throws  -> BridgeDisplayMutationBundle
-
+    
     /**
      * # Errors
      *
      * Returns an error when filter state cannot be persisted.
      */
     func setFilter(kind: BridgeWallpaperKind, enabled: Bool) async throws  -> BridgeSnapshotBundle
-
+    
     /**
      * # Errors
      *
-     * Returns an error when launch at login is unavailable or ServiceManagement
-     * rejects the update.
+     * Returns an error when launch at login is unavailable or
+     * `ServiceManagement` rejects the update.
      */
     func setLaunchAtLogin(enabled: Bool) async throws  -> BridgeDisplayMutationBundle
-
+    
     /**
      * # Errors
      *
@@ -707,14 +736,14 @@ public protocol WallpaperBridgeProtocol : AnyObject {
      * is invalid.
      */
     func setMirrorTarget(displayId: String, targetDisplayId: String) async throws  -> BridgeDisplayMutationBundle
-
+    
     /**
      * # Errors
      *
      * Returns an error when the wallpaper id is unknown or persistence fails.
      */
     func setMuted(wallpaperId: String, muted: Bool) async throws  -> BridgeWallpaperMutationBundle
-
+    
     /**
      * # Errors
      *
@@ -722,7 +751,7 @@ public protocol WallpaperBridgeProtocol : AnyObject {
      * persistence fails.
      */
     func setScalingMode(wallpaperId: String, displayId: String, mode: BridgeScalingMode) async throws  -> BridgeWallpaperMutationBundle
-
+    
     /**
      * # Errors
      *
@@ -730,7 +759,7 @@ public protocol WallpaperBridgeProtocol : AnyObject {
      * persistence fails.
      */
     func setTargetFps(wallpaperId: String, displayId: String, fps: UInt32) async throws  -> BridgeWallpaperMutationBundle
-
+    
     /**
      * # Errors
      *
@@ -738,21 +767,21 @@ public protocol WallpaperBridgeProtocol : AnyObject {
      * invalid, or persistence fails.
      */
     func setVolume(wallpaperId: String, volume: Float) async throws  -> BridgeWallpaperMutationBundle
-
+    
     /**
      * # Errors
      *
      * Returns an error when the bridge actor cannot produce settings.
      */
     func settingsSnapshot() async throws  -> BridgeSettingsSnapshot
-
+    
     /**
      * # Errors
      *
      * Returns an error when the engine cannot shut down active scenes.
      */
-    func shutdown() async throws
-
+    func shutdown() async throws 
+    
     /**
      * # Errors
      *
@@ -760,7 +789,7 @@ public protocol WallpaperBridgeProtocol : AnyObject {
      * be read.
      */
     func wallpaperOptionsSnapshot(wallpaperId: String) async throws  -> BridgeWallpaperOptionsSnapshot
-
+    
 }
 
 open class WallpaperBridge:
@@ -823,9 +852,9 @@ public convenience init()throws  {
         try! rustCall { uniffi_wallpaper_bridge_fn_free_wallpaperbridge(pointer, $0) }
     }
 
+    
 
-
-
+    
     /**
      * # Errors
      *
@@ -837,7 +866,7 @@ open func allSnapshots()async throws  -> BridgeSnapshotBundle {
             rustFutureFunc: {
                 uniffi_wallpaper_bridge_fn_method_wallpaperbridge_all_snapshots(
                     self.uniffiClonePointer()
-
+                    
                 )
             },
             pollFunc: ffi_wallpaper_bridge_rust_future_poll_rust_buffer,
@@ -847,7 +876,7 @@ open func allSnapshots()async throws  -> BridgeSnapshotBundle {
             errorHandler: FfiConverterTypeBridgeError.lift
         )
 }
-
+    
     /**
      * # Errors
      *
@@ -859,7 +888,7 @@ open func appSnapshot()async throws  -> BridgeAppSnapshot {
             rustFutureFunc: {
                 uniffi_wallpaper_bridge_fn_method_wallpaperbridge_app_snapshot(
                     self.uniffiClonePointer()
-
+                    
                 )
             },
             pollFunc: ffi_wallpaper_bridge_rust_future_poll_rust_buffer,
@@ -869,7 +898,7 @@ open func appSnapshot()async throws  -> BridgeAppSnapshot {
             errorHandler: FfiConverterTypeBridgeError.lift
         )
 }
-
+    
     /**
      * # Errors
      *
@@ -891,7 +920,7 @@ open func applyWallpaperOptions(wallpaperId: String)async throws  -> BridgeWallp
             errorHandler: FfiConverterTypeBridgeError.lift
         )
 }
-
+    
     /**
      * # Errors
      *
@@ -904,7 +933,7 @@ open func bootstrap()async throws  -> BridgeSnapshotBundle {
             rustFutureFunc: {
                 uniffi_wallpaper_bridge_fn_method_wallpaperbridge_bootstrap(
                     self.uniffiClonePointer()
-
+                    
                 )
             },
             pollFunc: ffi_wallpaper_bridge_rust_future_poll_rust_buffer,
@@ -914,7 +943,7 @@ open func bootstrap()async throws  -> BridgeSnapshotBundle {
             errorHandler: FfiConverterTypeBridgeError.lift
         )
 }
-
+    
     /**
      * # Errors
      *
@@ -936,7 +965,42 @@ open func cancelWallpaperOptions(wallpaperId: String)async throws  -> BridgeWall
             errorHandler: FfiConverterTypeBridgeError.lift
         )
 }
-
+    
+    /**
+     * # Errors
+     *
+     * Returns an error when a new log session cannot be created.
+     */
+open func clearLogs()throws  -> BridgeLogStatus {
+    return try  FfiConverterTypeBridgeLogStatus.lift(try rustCallWithError(FfiConverterTypeBridgeError.lift) {
+    uniffi_wallpaper_bridge_fn_method_wallpaperbridge_clear_logs(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+    /**
+     * # Errors
+     *
+     * Returns an error when the shader cache cannot be cleared or active
+     * scenes cannot be rebuilt.
+     */
+open func clearShaderCache()async throws  -> BridgeSettingsSnapshot {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_wallpaper_bridge_fn_method_wallpaperbridge_clear_shader_cache(
+                    self.uniffiClonePointer()
+                    
+                )
+            },
+            pollFunc: ffi_wallpaper_bridge_rust_future_poll_rust_buffer,
+            completeFunc: ffi_wallpaper_bridge_rust_future_complete_rust_buffer,
+            freeFunc: ffi_wallpaper_bridge_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeBridgeSettingsSnapshot.lift,
+            errorHandler: FfiConverterTypeBridgeError.lift
+        )
+}
+    
     /**
      * # Errors
      *
@@ -959,7 +1023,7 @@ open func editProperty(wallpaperId: String, propertyId: String, value: BridgePro
             errorHandler: FfiConverterTypeBridgeError.lift
         )
 }
-
+    
     /**
      * # Errors
      *
@@ -982,7 +1046,7 @@ open func editScalingFactor(wallpaperId: String, displayId: String, factor: Doub
             errorHandler: FfiConverterTypeBridgeError.lift
         )
 }
-
+    
     /**
      * # Errors
      *
@@ -1004,7 +1068,22 @@ open func ejectWallpaperFromDisplay(displayId: String, wallpaperId: String)async
             errorHandler: FfiConverterTypeBridgeError.lift
         )
 }
-
+    
+    /**
+     * # Errors
+     *
+     * Returns an error when GUI log emission cannot be accepted.
+     */
+open func emitGuiLog(level: BridgeLogLevel, file: String, line: UInt32, message: String)throws  {try rustCallWithError(FfiConverterTypeBridgeError.lift) {
+    uniffi_wallpaper_bridge_fn_method_wallpaperbridge_emit_gui_log(self.uniffiClonePointer(),
+        FfiConverterTypeBridgeLogLevel.lower(level),
+        FfiConverterString.lower(file),
+        FfiConverterUInt32.lower(line),
+        FfiConverterString.lower(message),$0
+    )
+}
+}
+    
     /**
      * # Errors
      *
@@ -1017,7 +1096,7 @@ open func librarySnapshot()async throws  -> BridgeLibrarySnapshot {
             rustFutureFunc: {
                 uniffi_wallpaper_bridge_fn_method_wallpaperbridge_library_snapshot(
                     self.uniffiClonePointer()
-
+                    
                 )
             },
             pollFunc: ffi_wallpaper_bridge_rust_future_poll_rust_buffer,
@@ -1027,7 +1106,19 @@ open func librarySnapshot()async throws  -> BridgeLibrarySnapshot {
             errorHandler: FfiConverterTypeBridgeError.lift
         )
 }
-
+    
+    /**
+     * # Errors
+     *
+     * Returns an error when the logger has not been installed.
+     */
+open func logFolderPath()throws  -> String {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeBridgeError.lift) {
+    uniffi_wallpaper_bridge_fn_method_wallpaperbridge_log_folder_path(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
     /**
      * # Errors
      *
@@ -1040,7 +1131,7 @@ open func monitorInformationSnapshot()async throws  -> BridgeMonitorInformationS
             rustFutureFunc: {
                 uniffi_wallpaper_bridge_fn_method_wallpaperbridge_monitor_information_snapshot(
                     self.uniffiClonePointer()
-
+                    
                 )
             },
             pollFunc: ffi_wallpaper_bridge_rust_future_poll_rust_buffer,
@@ -1050,7 +1141,7 @@ open func monitorInformationSnapshot()async throws  -> BridgeMonitorInformationS
             errorHandler: FfiConverterTypeBridgeError.lift
         )
 }
-
+    
     /**
      * # Errors
      *
@@ -1072,7 +1163,7 @@ open func okWallpaperOptions(wallpaperId: String)async throws  -> BridgeWallpape
             errorHandler: FfiConverterTypeBridgeError.lift
         )
 }
-
+    
     /**
      * # Errors
      *
@@ -1084,7 +1175,7 @@ open func pauseAll()async throws  -> BridgeSnapshotBundle {
             rustFutureFunc: {
                 uniffi_wallpaper_bridge_fn_method_wallpaperbridge_pause_all(
                     self.uniffiClonePointer()
-
+                    
                 )
             },
             pollFunc: ffi_wallpaper_bridge_rust_future_poll_rust_buffer,
@@ -1094,7 +1185,7 @@ open func pauseAll()async throws  -> BridgeSnapshotBundle {
             errorHandler: FfiConverterTypeBridgeError.lift
         )
 }
-
+    
     /**
      * # Errors
      *
@@ -1106,7 +1197,7 @@ open func playAll()async throws  -> BridgeSnapshotBundle {
             rustFutureFunc: {
                 uniffi_wallpaper_bridge_fn_method_wallpaperbridge_play_all(
                     self.uniffiClonePointer()
-
+                    
                 )
             },
             pollFunc: ffi_wallpaper_bridge_rust_future_poll_rust_buffer,
@@ -1116,7 +1207,7 @@ open func playAll()async throws  -> BridgeSnapshotBundle {
             errorHandler: FfiConverterTypeBridgeError.lift
         )
 }
-
+    
     /**
      * # Errors
      *
@@ -1128,7 +1219,7 @@ open func refreshDisplays()async throws  -> BridgeSnapshotBundle {
             rustFutureFunc: {
                 uniffi_wallpaper_bridge_fn_method_wallpaperbridge_refresh_displays(
                     self.uniffiClonePointer()
-
+                    
                 )
             },
             pollFunc: ffi_wallpaper_bridge_rust_future_poll_rust_buffer,
@@ -1138,7 +1229,7 @@ open func refreshDisplays()async throws  -> BridgeSnapshotBundle {
             errorHandler: FfiConverterTypeBridgeError.lift
         )
 }
-
+    
     /**
      * # Errors
      *
@@ -1150,7 +1241,7 @@ open func refreshLibrary()async throws  -> BridgeSnapshotBundle {
             rustFutureFunc: {
                 uniffi_wallpaper_bridge_fn_method_wallpaperbridge_refresh_library(
                     self.uniffiClonePointer()
-
+                    
                 )
             },
             pollFunc: ffi_wallpaper_bridge_rust_future_poll_rust_buffer,
@@ -1160,7 +1251,7 @@ open func refreshLibrary()async throws  -> BridgeSnapshotBundle {
             errorHandler: FfiConverterTypeBridgeError.lift
         )
 }
-
+    
     /**
      * # Errors
      *
@@ -1182,7 +1273,7 @@ open func restorePropertyDefault(wallpaperId: String, propertyId: String)async t
             errorHandler: FfiConverterTypeBridgeError.lift
         )
 }
-
+    
     /**
      * # Errors
      *
@@ -1205,7 +1296,7 @@ open func selectWallpaper(id: String)async throws  -> BridgeSnapshotBundle {
             errorHandler: FfiConverterTypeBridgeError.lift
         )
 }
-
+    
     /**
      * # Errors
      *
@@ -1227,7 +1318,7 @@ open func setAudioResponseEnabled(wallpaperId: String, enabled: Bool)async throw
             errorHandler: FfiConverterTypeBridgeError.lift
         )
 }
-
+    
     /**
      * # Errors
      *
@@ -1249,7 +1340,7 @@ open func setDisplayConfigEnabled(wallpaperId: String, displayId: String, enable
             errorHandler: FfiConverterTypeBridgeError.lift
         )
 }
-
+    
     /**
      * # Errors
      *
@@ -1272,7 +1363,7 @@ open func setDisplayEnabled(displayId: String, enabled: Bool)async throws  -> Br
             errorHandler: FfiConverterTypeBridgeError.lift
         )
 }
-
+    
     /**
      * # Errors
      *
@@ -1295,7 +1386,7 @@ open func setDisplayMode(displayId: String, mode: BridgeDisplayMode)async throws
             errorHandler: FfiConverterTypeBridgeError.lift
         )
 }
-
+    
     /**
      * # Errors
      *
@@ -1317,12 +1408,12 @@ open func setFilter(kind: BridgeWallpaperKind, enabled: Bool)async throws  -> Br
             errorHandler: FfiConverterTypeBridgeError.lift
         )
 }
-
+    
     /**
      * # Errors
      *
-     * Returns an error when launch at login is unavailable or ServiceManagement
-     * rejects the update.
+     * Returns an error when launch at login is unavailable or
+     * `ServiceManagement` rejects the update.
      */
 open func setLaunchAtLogin(enabled: Bool)async throws  -> BridgeDisplayMutationBundle {
     return
@@ -1340,7 +1431,7 @@ open func setLaunchAtLogin(enabled: Bool)async throws  -> BridgeDisplayMutationB
             errorHandler: FfiConverterTypeBridgeError.lift
         )
 }
-
+    
     /**
      * # Errors
      *
@@ -1363,7 +1454,7 @@ open func setMirrorTarget(displayId: String, targetDisplayId: String)async throw
             errorHandler: FfiConverterTypeBridgeError.lift
         )
 }
-
+    
     /**
      * # Errors
      *
@@ -1385,7 +1476,7 @@ open func setMuted(wallpaperId: String, muted: Bool)async throws  -> BridgeWallp
             errorHandler: FfiConverterTypeBridgeError.lift
         )
 }
-
+    
     /**
      * # Errors
      *
@@ -1408,7 +1499,7 @@ open func setScalingMode(wallpaperId: String, displayId: String, mode: BridgeSca
             errorHandler: FfiConverterTypeBridgeError.lift
         )
 }
-
+    
     /**
      * # Errors
      *
@@ -1431,7 +1522,7 @@ open func setTargetFps(wallpaperId: String, displayId: String, fps: UInt32)async
             errorHandler: FfiConverterTypeBridgeError.lift
         )
 }
-
+    
     /**
      * # Errors
      *
@@ -1454,7 +1545,7 @@ open func setVolume(wallpaperId: String, volume: Float)async throws  -> BridgeWa
             errorHandler: FfiConverterTypeBridgeError.lift
         )
 }
-
+    
     /**
      * # Errors
      *
@@ -1466,7 +1557,7 @@ open func settingsSnapshot()async throws  -> BridgeSettingsSnapshot {
             rustFutureFunc: {
                 uniffi_wallpaper_bridge_fn_method_wallpaperbridge_settings_snapshot(
                     self.uniffiClonePointer()
-
+                    
                 )
             },
             pollFunc: ffi_wallpaper_bridge_rust_future_poll_rust_buffer,
@@ -1476,7 +1567,7 @@ open func settingsSnapshot()async throws  -> BridgeSettingsSnapshot {
             errorHandler: FfiConverterTypeBridgeError.lift
         )
 }
-
+    
     /**
      * # Errors
      *
@@ -1488,7 +1579,7 @@ open func shutdown()async throws  {
             rustFutureFunc: {
                 uniffi_wallpaper_bridge_fn_method_wallpaperbridge_shutdown(
                     self.uniffiClonePointer()
-
+                    
                 )
             },
             pollFunc: ffi_wallpaper_bridge_rust_future_poll_void,
@@ -1498,7 +1589,7 @@ open func shutdown()async throws  {
             errorHandler: FfiConverterTypeBridgeError.lift
         )
 }
-
+    
     /**
      * # Errors
      *
@@ -1521,7 +1612,7 @@ open func wallpaperOptionsSnapshot(wallpaperId: String)async throws  -> BridgeWa
             errorHandler: FfiConverterTypeBridgeError.lift
         )
 }
-
+    
 
 }
 
@@ -1628,9 +1719,9 @@ public struct FfiConverterTypeBridgeAppSnapshot: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeAppSnapshot {
         return
             try BridgeAppSnapshot(
-                playbackState: FfiConverterTypeBridgePlaybackState.read(from: &buf),
-                selectedWallpaperId: FfiConverterOptionString.read(from: &buf),
-                activeWallpaperIds: FfiConverterSequenceString.read(from: &buf),
+                playbackState: FfiConverterTypeBridgePlaybackState.read(from: &buf), 
+                selectedWallpaperId: FfiConverterOptionString.read(from: &buf), 
+                activeWallpaperIds: FfiConverterSequenceString.read(from: &buf), 
                 errors: FfiConverterSequenceString.read(from: &buf)
         )
     }
@@ -1740,14 +1831,14 @@ public struct FfiConverterTypeBridgeDisplayConfigRow: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeDisplayConfigRow {
         return
             try BridgeDisplayConfigRow(
-                displayId: FfiConverterString.read(from: &buf),
-                title: FfiConverterString.read(from: &buf),
-                enabled: FfiConverterBool.read(from: &buf),
-                scalingMode: FfiConverterTypeBridgeScalingMode.read(from: &buf),
-                scalingFactor: FfiConverterDouble.read(from: &buf),
-                targetFps: FfiConverterUInt32.read(from: &buf),
-                maxFps: FfiConverterUInt32.read(from: &buf),
-                dirty: FfiConverterBool.read(from: &buf),
+                displayId: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                enabled: FfiConverterBool.read(from: &buf), 
+                scalingMode: FfiConverterTypeBridgeScalingMode.read(from: &buf), 
+                scalingFactor: FfiConverterDouble.read(from: &buf), 
+                targetFps: FfiConverterUInt32.read(from: &buf), 
+                maxFps: FfiConverterUInt32.read(from: &buf), 
+                dirty: FfiConverterBool.read(from: &buf), 
                 canRestoreDefaults: FfiConverterBool.read(from: &buf)
         )
     }
@@ -1832,9 +1923,9 @@ public struct FfiConverterTypeBridgeDisplayMutationBundle: FfiConverterRustBuffe
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeDisplayMutationBundle {
         return
             try BridgeDisplayMutationBundle(
-                app: FfiConverterTypeBridgeAppSnapshot.read(from: &buf),
-                library: FfiConverterTypeBridgeLibrarySnapshot.read(from: &buf),
-                monitorInformation: FfiConverterTypeBridgeMonitorInformationSnapshot.read(from: &buf),
+                app: FfiConverterTypeBridgeAppSnapshot.read(from: &buf), 
+                library: FfiConverterTypeBridgeLibrarySnapshot.read(from: &buf), 
+                monitorInformation: FfiConverterTypeBridgeMonitorInformationSnapshot.read(from: &buf), 
                 settings: FfiConverterTypeBridgeSettingsSnapshot.read(from: &buf)
         )
     }
@@ -1926,11 +2017,11 @@ public struct FfiConverterTypeBridgeDisplaySettingsRow: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeDisplaySettingsRow {
         return
             try BridgeDisplaySettingsRow(
-                displayId: FfiConverterString.read(from: &buf),
-                title: FfiConverterString.read(from: &buf),
-                enabled: FfiConverterBool.read(from: &buf),
-                mode: FfiConverterTypeBridgeDisplayMode.read(from: &buf),
-                mirrorTargets: FfiConverterSequenceString.read(from: &buf),
+                displayId: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                enabled: FfiConverterBool.read(from: &buf), 
+                mode: FfiConverterTypeBridgeDisplayMode.read(from: &buf), 
+                mirrorTargets: FfiConverterSequenceString.read(from: &buf), 
                 selectedMirrorTarget: FfiConverterOptionString.read(from: &buf)
         )
     }
@@ -2006,8 +2097,8 @@ public struct FfiConverterTypeBridgeLibraryScanStatus: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeLibraryScanStatus {
         return
             try BridgeLibraryScanStatus(
-                scanning: FfiConverterBool.read(from: &buf),
-                done: FfiConverterUInt64.read(from: &buf),
+                scanning: FfiConverterBool.read(from: &buf), 
+                done: FfiConverterUInt64.read(from: &buf), 
                 total: FfiConverterUInt64.read(from: &buf)
         )
     }
@@ -2098,11 +2189,11 @@ public struct FfiConverterTypeBridgeLibrarySnapshot: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeLibrarySnapshot {
         return
             try BridgeLibrarySnapshot(
-                wallpapers: FfiConverterSequenceTypeBridgeWallpaperEntry.read(from: &buf),
-                scanStatus: FfiConverterTypeBridgeLibraryScanStatus.read(from: &buf),
-                sceneCount: FfiConverterUInt64.read(from: &buf),
-                videoCount: FfiConverterUInt64.read(from: &buf),
-                webpageCount: FfiConverterUInt64.read(from: &buf),
+                wallpapers: FfiConverterSequenceTypeBridgeWallpaperEntry.read(from: &buf), 
+                scanStatus: FfiConverterTypeBridgeLibraryScanStatus.read(from: &buf), 
+                sceneCount: FfiConverterUInt64.read(from: &buf), 
+                videoCount: FfiConverterUInt64.read(from: &buf), 
+                webpageCount: FfiConverterUInt64.read(from: &buf), 
                 unknownCount: FfiConverterUInt64.read(from: &buf)
         )
     }
@@ -2130,6 +2221,88 @@ public func FfiConverterTypeBridgeLibrarySnapshot_lift(_ buf: RustBuffer) throws
 #endif
 public func FfiConverterTypeBridgeLibrarySnapshot_lower(_ value: BridgeLibrarySnapshot) -> RustBuffer {
     return FfiConverterTypeBridgeLibrarySnapshot.lower(value)
+}
+
+
+public struct BridgeLogStatus {
+    public var logsRoot: String
+    public var activeSession: String
+    public var activeFile: String
+    public var activeFileSizeBytes: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(logsRoot: String, activeSession: String, activeFile: String, activeFileSizeBytes: UInt64) {
+        self.logsRoot = logsRoot
+        self.activeSession = activeSession
+        self.activeFile = activeFile
+        self.activeFileSizeBytes = activeFileSizeBytes
+    }
+}
+
+
+
+extension BridgeLogStatus: Equatable, Hashable {
+    public static func ==(lhs: BridgeLogStatus, rhs: BridgeLogStatus) -> Bool {
+        if lhs.logsRoot != rhs.logsRoot {
+            return false
+        }
+        if lhs.activeSession != rhs.activeSession {
+            return false
+        }
+        if lhs.activeFile != rhs.activeFile {
+            return false
+        }
+        if lhs.activeFileSizeBytes != rhs.activeFileSizeBytes {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(logsRoot)
+        hasher.combine(activeSession)
+        hasher.combine(activeFile)
+        hasher.combine(activeFileSizeBytes)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeLogStatus: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeLogStatus {
+        return
+            try BridgeLogStatus(
+                logsRoot: FfiConverterString.read(from: &buf), 
+                activeSession: FfiConverterString.read(from: &buf), 
+                activeFile: FfiConverterString.read(from: &buf), 
+                activeFileSizeBytes: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeLogStatus, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.logsRoot, into: &buf)
+        FfiConverterString.write(value.activeSession, into: &buf)
+        FfiConverterString.write(value.activeFile, into: &buf)
+        FfiConverterUInt64.write(value.activeFileSizeBytes, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeLogStatus_lift(_ buf: RustBuffer) throws -> BridgeLogStatus {
+    return try FfiConverterTypeBridgeLogStatus.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeLogStatus_lower(_ value: BridgeLogStatus) -> RustBuffer {
+    return FfiConverterTypeBridgeLogStatus.lower(value)
 }
 
 
@@ -2202,12 +2375,12 @@ public struct FfiConverterTypeBridgeMonitorInfoRow: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeMonitorInfoRow {
         return
             try BridgeMonitorInfoRow(
-                displayId: FfiConverterString.read(from: &buf),
-                title: FfiConverterString.read(from: &buf),
-                wallpaperId: FfiConverterString.read(from: &buf),
-                wallpaperTitle: FfiConverterString.read(from: &buf),
-                scalingMode: FfiConverterString.read(from: &buf),
-                targetFps: FfiConverterString.read(from: &buf),
+                displayId: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                wallpaperId: FfiConverterString.read(from: &buf), 
+                wallpaperTitle: FfiConverterString.read(from: &buf), 
+                scalingMode: FfiConverterString.read(from: &buf), 
+                targetFps: FfiConverterString.read(from: &buf), 
                 audioResponse: FfiConverterBool.read(from: &buf)
         )
     }
@@ -2378,14 +2551,14 @@ public struct FfiConverterTypeBridgePropertyDescriptor: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgePropertyDescriptor {
         return
             try BridgePropertyDescriptor(
-                id: FfiConverterString.read(from: &buf),
-                kind: FfiConverterTypeBridgePropertyKind.read(from: &buf),
-                labelHtml: FfiConverterString.read(from: &buf),
-                value: FfiConverterTypeBridgePropertyValue.read(from: &buf),
-                defaultValue: FfiConverterTypeBridgePropertyValue.read(from: &buf),
-                slider: FfiConverterOptionTypeBridgeSliderMetadata.read(from: &buf),
-                dirty: FfiConverterBool.read(from: &buf),
-                canRestoreDefaults: FfiConverterBool.read(from: &buf),
+                id: FfiConverterString.read(from: &buf), 
+                kind: FfiConverterTypeBridgePropertyKind.read(from: &buf), 
+                labelHtml: FfiConverterString.read(from: &buf), 
+                value: FfiConverterTypeBridgePropertyValue.read(from: &buf), 
+                defaultValue: FfiConverterTypeBridgePropertyValue.read(from: &buf), 
+                slider: FfiConverterOptionTypeBridgeSliderMetadata.read(from: &buf), 
+                dirty: FfiConverterBool.read(from: &buf), 
+                canRestoreDefaults: FfiConverterBool.read(from: &buf), 
                 enabled: FfiConverterBool.read(from: &buf)
         )
     }
@@ -2427,10 +2600,11 @@ public struct BridgeSettingsSnapshot {
     public var gitSha: String
     public var bridgeVersion: String
     public var coreVersion: String
+    public var storage: BridgeStorageStatus
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(displays: [BridgeDisplaySettingsRow], launchAtLoginAvailable: Bool, launchAtLoginEnabled: Bool, appVersion: String, gitSha: String, bridgeVersion: String, coreVersion: String) {
+    public init(displays: [BridgeDisplaySettingsRow], launchAtLoginAvailable: Bool, launchAtLoginEnabled: Bool, appVersion: String, gitSha: String, bridgeVersion: String, coreVersion: String, storage: BridgeStorageStatus) {
         self.displays = displays
         self.launchAtLoginAvailable = launchAtLoginAvailable
         self.launchAtLoginEnabled = launchAtLoginEnabled
@@ -2438,6 +2612,7 @@ public struct BridgeSettingsSnapshot {
         self.gitSha = gitSha
         self.bridgeVersion = bridgeVersion
         self.coreVersion = coreVersion
+        self.storage = storage
     }
 }
 
@@ -2466,6 +2641,9 @@ extension BridgeSettingsSnapshot: Equatable, Hashable {
         if lhs.coreVersion != rhs.coreVersion {
             return false
         }
+        if lhs.storage != rhs.storage {
+            return false
+        }
         return true
     }
 
@@ -2477,6 +2655,7 @@ extension BridgeSettingsSnapshot: Equatable, Hashable {
         hasher.combine(gitSha)
         hasher.combine(bridgeVersion)
         hasher.combine(coreVersion)
+        hasher.combine(storage)
     }
 }
 
@@ -2488,13 +2667,14 @@ public struct FfiConverterTypeBridgeSettingsSnapshot: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeSettingsSnapshot {
         return
             try BridgeSettingsSnapshot(
-                displays: FfiConverterSequenceTypeBridgeDisplaySettingsRow.read(from: &buf),
-                launchAtLoginAvailable: FfiConverterBool.read(from: &buf),
-                launchAtLoginEnabled: FfiConverterBool.read(from: &buf),
-                appVersion: FfiConverterString.read(from: &buf),
-                gitSha: FfiConverterString.read(from: &buf),
-                bridgeVersion: FfiConverterString.read(from: &buf),
-                coreVersion: FfiConverterString.read(from: &buf)
+                displays: FfiConverterSequenceTypeBridgeDisplaySettingsRow.read(from: &buf), 
+                launchAtLoginAvailable: FfiConverterBool.read(from: &buf), 
+                launchAtLoginEnabled: FfiConverterBool.read(from: &buf), 
+                appVersion: FfiConverterString.read(from: &buf), 
+                gitSha: FfiConverterString.read(from: &buf), 
+                bridgeVersion: FfiConverterString.read(from: &buf), 
+                coreVersion: FfiConverterString.read(from: &buf), 
+                storage: FfiConverterTypeBridgeStorageStatus.read(from: &buf)
         )
     }
 
@@ -2506,6 +2686,7 @@ public struct FfiConverterTypeBridgeSettingsSnapshot: FfiConverterRustBuffer {
         FfiConverterString.write(value.gitSha, into: &buf)
         FfiConverterString.write(value.bridgeVersion, into: &buf)
         FfiConverterString.write(value.coreVersion, into: &buf)
+        FfiConverterTypeBridgeStorageStatus.write(value.storage, into: &buf)
     }
 }
 
@@ -2576,9 +2757,9 @@ public struct FfiConverterTypeBridgeSliderMetadata: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeSliderMetadata {
         return
             try BridgeSliderMetadata(
-                min: FfiConverterDouble.read(from: &buf),
-                max: FfiConverterDouble.read(from: &buf),
-                step: FfiConverterDouble.read(from: &buf),
+                min: FfiConverterDouble.read(from: &buf), 
+                max: FfiConverterDouble.read(from: &buf), 
+                step: FfiConverterDouble.read(from: &buf), 
                 precision: FfiConverterUInt32.read(from: &buf)
         )
     }
@@ -2664,10 +2845,10 @@ public struct FfiConverterTypeBridgeSnapshotBundle: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeSnapshotBundle {
         return
             try BridgeSnapshotBundle(
-                app: FfiConverterTypeBridgeAppSnapshot.read(from: &buf),
-                library: FfiConverterTypeBridgeLibrarySnapshot.read(from: &buf),
-                wallpaperOptions: FfiConverterOptionTypeBridgeWallpaperOptionsSnapshot.read(from: &buf),
-                monitorInformation: FfiConverterTypeBridgeMonitorInformationSnapshot.read(from: &buf),
+                app: FfiConverterTypeBridgeAppSnapshot.read(from: &buf), 
+                library: FfiConverterTypeBridgeLibrarySnapshot.read(from: &buf), 
+                wallpaperOptions: FfiConverterOptionTypeBridgeWallpaperOptionsSnapshot.read(from: &buf), 
+                monitorInformation: FfiConverterTypeBridgeMonitorInformationSnapshot.read(from: &buf), 
                 settings: FfiConverterTypeBridgeSettingsSnapshot.read(from: &buf)
         )
     }
@@ -2694,6 +2875,72 @@ public func FfiConverterTypeBridgeSnapshotBundle_lift(_ buf: RustBuffer) throws 
 #endif
 public func FfiConverterTypeBridgeSnapshotBundle_lower(_ value: BridgeSnapshotBundle) -> RustBuffer {
     return FfiConverterTypeBridgeSnapshotBundle.lower(value)
+}
+
+
+public struct BridgeStorageStatus {
+    public var shaderCacheSizeBytes: UInt64
+    public var logs: BridgeLogStatus
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(shaderCacheSizeBytes: UInt64, logs: BridgeLogStatus) {
+        self.shaderCacheSizeBytes = shaderCacheSizeBytes
+        self.logs = logs
+    }
+}
+
+
+
+extension BridgeStorageStatus: Equatable, Hashable {
+    public static func ==(lhs: BridgeStorageStatus, rhs: BridgeStorageStatus) -> Bool {
+        if lhs.shaderCacheSizeBytes != rhs.shaderCacheSizeBytes {
+            return false
+        }
+        if lhs.logs != rhs.logs {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(shaderCacheSizeBytes)
+        hasher.combine(logs)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeStorageStatus: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeStorageStatus {
+        return
+            try BridgeStorageStatus(
+                shaderCacheSizeBytes: FfiConverterUInt64.read(from: &buf), 
+                logs: FfiConverterTypeBridgeLogStatus.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeStorageStatus, into buf: inout [UInt8]) {
+        FfiConverterUInt64.write(value.shaderCacheSizeBytes, into: &buf)
+        FfiConverterTypeBridgeLogStatus.write(value.logs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeStorageStatus_lift(_ buf: RustBuffer) throws -> BridgeStorageStatus {
+    return try FfiConverterTypeBridgeStorageStatus.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeStorageStatus_lower(_ value: BridgeStorageStatus) -> RustBuffer {
+    return FfiConverterTypeBridgeStorageStatus.lower(value)
 }
 
 
@@ -2766,12 +3013,12 @@ public struct FfiConverterTypeBridgeWallpaperEntry: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeWallpaperEntry {
         return
             try BridgeWallpaperEntry(
-                id: FfiConverterString.read(from: &buf),
-                title: FfiConverterString.read(from: &buf),
-                kind: FfiConverterTypeBridgeWallpaperKind.read(from: &buf),
-                supported: FfiConverterBool.read(from: &buf),
-                active: FfiConverterBool.read(from: &buf),
-                selected: FfiConverterBool.read(from: &buf),
+                id: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                kind: FfiConverterTypeBridgeWallpaperKind.read(from: &buf), 
+                supported: FfiConverterBool.read(from: &buf), 
+                active: FfiConverterBool.read(from: &buf), 
+                selected: FfiConverterBool.read(from: &buf), 
                 previewPath: FfiConverterOptionString.read(from: &buf)
         )
     }
@@ -2860,10 +3107,10 @@ public struct FfiConverterTypeBridgeWallpaperMutationBundle: FfiConverterRustBuf
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeWallpaperMutationBundle {
         return
             try BridgeWallpaperMutationBundle(
-                app: FfiConverterTypeBridgeAppSnapshot.read(from: &buf),
-                library: FfiConverterTypeBridgeLibrarySnapshot.read(from: &buf),
-                wallpaperOptions: FfiConverterTypeBridgeWallpaperOptionsSnapshot.read(from: &buf),
-                monitorInformation: FfiConverterTypeBridgeMonitorInformationSnapshot.read(from: &buf),
+                app: FfiConverterTypeBridgeAppSnapshot.read(from: &buf), 
+                library: FfiConverterTypeBridgeLibrarySnapshot.read(from: &buf), 
+                wallpaperOptions: FfiConverterTypeBridgeWallpaperOptionsSnapshot.read(from: &buf), 
+                monitorInformation: FfiConverterTypeBridgeMonitorInformationSnapshot.read(from: &buf), 
                 settings: FfiConverterTypeBridgeSettingsSnapshot.read(from: &buf)
         )
     }
@@ -2980,15 +3227,15 @@ public struct FfiConverterTypeBridgeWallpaperOptionsSnapshot: FfiConverterRustBu
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeWallpaperOptionsSnapshot {
         return
             try BridgeWallpaperOptionsSnapshot(
-                wallpaperId: FfiConverterString.read(from: &buf),
-                title: FfiConverterString.read(from: &buf),
-                kind: FfiConverterTypeBridgeWallpaperKind.read(from: &buf),
-                supported: FfiConverterBool.read(from: &buf),
-                dirty: FfiConverterBool.read(from: &buf),
-                properties: FfiConverterSequenceTypeBridgePropertyDescriptor.read(from: &buf),
-                displayConfigurations: FfiConverterSequenceTypeBridgeDisplayConfigRow.read(from: &buf),
-                audioResponseEnabled: FfiConverterBool.read(from: &buf),
-                muted: FfiConverterBool.read(from: &buf),
+                wallpaperId: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                kind: FfiConverterTypeBridgeWallpaperKind.read(from: &buf), 
+                supported: FfiConverterBool.read(from: &buf), 
+                dirty: FfiConverterBool.read(from: &buf), 
+                properties: FfiConverterSequenceTypeBridgePropertyDescriptor.read(from: &buf), 
+                displayConfigurations: FfiConverterSequenceTypeBridgeDisplayConfigRow.read(from: &buf), 
+                audioResponseEnabled: FfiConverterBool.read(from: &buf), 
+                muted: FfiConverterBool.read(from: &buf), 
                 volume: FfiConverterFloat.read(from: &buf)
         )
     }
@@ -3026,7 +3273,7 @@ public func FfiConverterTypeBridgeWallpaperOptionsSnapshot_lower(_ value: Bridge
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
 public enum BridgeDisplayMode {
-
+    
     case standalone
     case mirror
 }
@@ -3041,26 +3288,26 @@ public struct FfiConverterTypeBridgeDisplayMode: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeDisplayMode {
         let variant: Int32 = try readInt(&buf)
         switch variant {
-
+        
         case 1: return .standalone
-
+        
         case 2: return .mirror
-
+        
         default: throw UniffiInternalError.unexpectedEnumCase
         }
     }
 
     public static func write(_ value: BridgeDisplayMode, into buf: inout [UInt8]) {
         switch value {
-
-
+        
+        
         case .standalone:
             writeInt(&buf, Int32(1))
-
-
+        
+        
         case .mirror:
             writeInt(&buf, Int32(2))
-
+        
         }
     }
 }
@@ -3089,8 +3336,8 @@ extension BridgeDisplayMode: Equatable, Hashable {}
 
 public enum BridgeError {
 
-
-
+    
+    
     case Error(kind: BridgeErrorKind, message: String
     )
 }
@@ -3106,11 +3353,11 @@ public struct FfiConverterTypeBridgeError: FfiConverterRustBuffer {
         let variant: Int32 = try readInt(&buf)
         switch variant {
 
+        
 
-
-
+        
         case 1: return .Error(
-            kind: try FfiConverterTypeBridgeErrorKind.read(from: &buf),
+            kind: try FfiConverterTypeBridgeErrorKind.read(from: &buf), 
             message: try FfiConverterString.read(from: &buf)
             )
 
@@ -3121,15 +3368,15 @@ public struct FfiConverterTypeBridgeError: FfiConverterRustBuffer {
     public static func write(_ value: BridgeError, into buf: inout [UInt8]) {
         switch value {
 
+        
 
-
-
-
+        
+        
         case let .Error(kind,message):
             writeInt(&buf, Int32(1))
             FfiConverterTypeBridgeErrorKind.write(kind, into: &buf)
             FfiConverterString.write(message, into: &buf)
-
+            
         }
     }
 }
@@ -3147,7 +3394,7 @@ extension BridgeError: Foundation.LocalizedError {
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
 public enum BridgeErrorKind {
-
+    
     case config
     case library
     case project
@@ -3168,62 +3415,62 @@ public struct FfiConverterTypeBridgeErrorKind: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeErrorKind {
         let variant: Int32 = try readInt(&buf)
         switch variant {
-
+        
         case 1: return .config
-
+        
         case 2: return .library
-
+        
         case 3: return .project
-
+        
         case 4: return .engine
-
+        
         case 5: return .display
-
+        
         case 6: return .io
-
+        
         case 7: return .invalidInput
-
+        
         case 8: return .startup
-
+        
         default: throw UniffiInternalError.unexpectedEnumCase
         }
     }
 
     public static func write(_ value: BridgeErrorKind, into buf: inout [UInt8]) {
         switch value {
-
-
+        
+        
         case .config:
             writeInt(&buf, Int32(1))
-
-
+        
+        
         case .library:
             writeInt(&buf, Int32(2))
-
-
+        
+        
         case .project:
             writeInt(&buf, Int32(3))
-
-
+        
+        
         case .engine:
             writeInt(&buf, Int32(4))
-
-
+        
+        
         case .display:
             writeInt(&buf, Int32(5))
-
-
+        
+        
         case .io:
             writeInt(&buf, Int32(6))
-
-
+        
+        
         case .invalidInput:
             writeInt(&buf, Int32(7))
-
-
+        
+        
         case .startup:
             writeInt(&buf, Int32(8))
-
+        
         }
     }
 }
@@ -3252,8 +3499,93 @@ extension BridgeErrorKind: Equatable, Hashable {}
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
-public enum BridgePlaybackState {
+public enum BridgeLogLevel {
+    
+    case trace
+    case debug
+    case info
+    case warn
+    case error
+}
 
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeLogLevel: FfiConverterRustBuffer {
+    typealias SwiftType = BridgeLogLevel
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeLogLevel {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .trace
+        
+        case 2: return .debug
+        
+        case 3: return .info
+        
+        case 4: return .warn
+        
+        case 5: return .error
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: BridgeLogLevel, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .trace:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .debug:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .info:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .warn:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .error:
+            writeInt(&buf, Int32(5))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeLogLevel_lift(_ buf: RustBuffer) throws -> BridgeLogLevel {
+    return try FfiConverterTypeBridgeLogLevel.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeLogLevel_lower(_ value: BridgeLogLevel) -> RustBuffer {
+    return FfiConverterTypeBridgeLogLevel.lower(value)
+}
+
+
+
+extension BridgeLogLevel: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum BridgePlaybackState {
+    
     case playing
     case paused
 }
@@ -3268,26 +3600,26 @@ public struct FfiConverterTypeBridgePlaybackState: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgePlaybackState {
         let variant: Int32 = try readInt(&buf)
         switch variant {
-
+        
         case 1: return .playing
-
+        
         case 2: return .paused
-
+        
         default: throw UniffiInternalError.unexpectedEnumCase
         }
     }
 
     public static func write(_ value: BridgePlaybackState, into buf: inout [UInt8]) {
         switch value {
-
-
+        
+        
         case .playing:
             writeInt(&buf, Int32(1))
-
-
+        
+        
         case .paused:
             writeInt(&buf, Int32(2))
-
+        
         }
     }
 }
@@ -3317,7 +3649,7 @@ extension BridgePlaybackState: Equatable, Hashable {}
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
 public enum BridgePropertyKind {
-
+    
     case slider
     case combo
     case bool
@@ -3339,68 +3671,68 @@ public struct FfiConverterTypeBridgePropertyKind: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgePropertyKind {
         let variant: Int32 = try readInt(&buf)
         switch variant {
-
+        
         case 1: return .slider
-
+        
         case 2: return .combo
-
+        
         case 3: return .bool
-
+        
         case 4: return .color
-
+        
         case 5: return .textInput
-
+        
         case 6: return .text
-
+        
         case 7: return .group
-
+        
         case 8: return .directory
-
+        
         case 9: return .unknown
-
+        
         default: throw UniffiInternalError.unexpectedEnumCase
         }
     }
 
     public static func write(_ value: BridgePropertyKind, into buf: inout [UInt8]) {
         switch value {
-
-
+        
+        
         case .slider:
             writeInt(&buf, Int32(1))
-
-
+        
+        
         case .combo:
             writeInt(&buf, Int32(2))
-
-
+        
+        
         case .bool:
             writeInt(&buf, Int32(3))
-
-
+        
+        
         case .color:
             writeInt(&buf, Int32(4))
-
-
+        
+        
         case .textInput:
             writeInt(&buf, Int32(5))
-
-
+        
+        
         case .text:
             writeInt(&buf, Int32(6))
-
-
+        
+        
         case .group:
             writeInt(&buf, Int32(7))
-
-
+        
+        
         case .directory:
             writeInt(&buf, Int32(8))
-
-
+        
+        
         case .unknown:
             writeInt(&buf, Int32(9))
-
+        
         }
     }
 }
@@ -3430,7 +3762,7 @@ extension BridgePropertyKind: Equatable, Hashable {}
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
 public enum BridgePropertyValue {
-
+    
     case bool(value: Bool
     )
     case number(value: Double
@@ -3452,54 +3784,54 @@ public struct FfiConverterTypeBridgePropertyValue: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgePropertyValue {
         let variant: Int32 = try readInt(&buf)
         switch variant {
-
+        
         case 1: return .bool(value: try FfiConverterBool.read(from: &buf)
         )
-
+        
         case 2: return .number(value: try FfiConverterDouble.read(from: &buf)
         )
-
+        
         case 3: return .string(value: try FfiConverterString.read(from: &buf)
         )
-
+        
         case 4: return .colorRgb(red: try FfiConverterDouble.read(from: &buf), green: try FfiConverterDouble.read(from: &buf), blue: try FfiConverterDouble.read(from: &buf)
         )
-
+        
         case 5: return .empty
-
+        
         default: throw UniffiInternalError.unexpectedEnumCase
         }
     }
 
     public static func write(_ value: BridgePropertyValue, into buf: inout [UInt8]) {
         switch value {
-
-
+        
+        
         case let .bool(value):
             writeInt(&buf, Int32(1))
             FfiConverterBool.write(value, into: &buf)
-
-
+            
+        
         case let .number(value):
             writeInt(&buf, Int32(2))
             FfiConverterDouble.write(value, into: &buf)
-
-
+            
+        
         case let .string(value):
             writeInt(&buf, Int32(3))
             FfiConverterString.write(value, into: &buf)
-
-
+            
+        
         case let .colorRgb(red,green,blue):
             writeInt(&buf, Int32(4))
             FfiConverterDouble.write(red, into: &buf)
             FfiConverterDouble.write(green, into: &buf)
             FfiConverterDouble.write(blue, into: &buf)
-
-
+            
+        
         case .empty:
             writeInt(&buf, Int32(5))
-
+        
         }
     }
 }
@@ -3529,7 +3861,7 @@ extension BridgePropertyValue: Equatable, Hashable {}
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
 public enum BridgeScalingMode {
-
+    
     case none
     case stretch
     case match
@@ -3546,38 +3878,38 @@ public struct FfiConverterTypeBridgeScalingMode: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeScalingMode {
         let variant: Int32 = try readInt(&buf)
         switch variant {
-
+        
         case 1: return .none
-
+        
         case 2: return .stretch
-
+        
         case 3: return .match
-
+        
         case 4: return .fill
-
+        
         default: throw UniffiInternalError.unexpectedEnumCase
         }
     }
 
     public static func write(_ value: BridgeScalingMode, into buf: inout [UInt8]) {
         switch value {
-
-
+        
+        
         case .none:
             writeInt(&buf, Int32(1))
-
-
+        
+        
         case .stretch:
             writeInt(&buf, Int32(2))
-
-
+        
+        
         case .match:
             writeInt(&buf, Int32(3))
-
-
+        
+        
         case .fill:
             writeInt(&buf, Int32(4))
-
+        
         }
     }
 }
@@ -3607,7 +3939,7 @@ extension BridgeScalingMode: Equatable, Hashable {}
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
 public enum BridgeWallpaperKind {
-
+    
     case projectScene
     case video
     case webpage
@@ -3624,38 +3956,38 @@ public struct FfiConverterTypeBridgeWallpaperKind: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeWallpaperKind {
         let variant: Int32 = try readInt(&buf)
         switch variant {
-
+        
         case 1: return .projectScene
-
+        
         case 2: return .video
-
+        
         case 3: return .webpage
-
+        
         case 4: return .unknown
-
+        
         default: throw UniffiInternalError.unexpectedEnumCase
         }
     }
 
     public static func write(_ value: BridgeWallpaperKind, into buf: inout [UInt8]) {
         switch value {
-
-
+        
+        
         case .projectScene:
             writeInt(&buf, Int32(1))
-
-
+        
+        
         case .video:
             writeInt(&buf, Int32(2))
-
-
+        
+        
         case .webpage:
             writeInt(&buf, Int32(3))
-
-
+        
+        
         case .unknown:
             writeInt(&buf, Int32(4))
-
+        
         }
     }
 }
@@ -3979,6 +4311,12 @@ private var initializationResult: InitializationResult = {
     if (uniffi_wallpaper_bridge_checksum_method_wallpaperbridge_cancel_wallpaper_options() != 36190) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_wallpaper_bridge_checksum_method_wallpaperbridge_clear_logs() != 24034) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_wallpaper_bridge_checksum_method_wallpaperbridge_clear_shader_cache() != 31799) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_wallpaper_bridge_checksum_method_wallpaperbridge_edit_property() != 49263) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -3988,7 +4326,13 @@ private var initializationResult: InitializationResult = {
     if (uniffi_wallpaper_bridge_checksum_method_wallpaperbridge_eject_wallpaper_from_display() != 4644) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_wallpaper_bridge_checksum_method_wallpaperbridge_emit_gui_log() != 771) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_wallpaper_bridge_checksum_method_wallpaperbridge_library_snapshot() != 36547) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_wallpaper_bridge_checksum_method_wallpaperbridge_log_folder_path() != 6045) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_wallpaper_bridge_checksum_method_wallpaperbridge_monitor_information_snapshot() != 21360) {
@@ -4030,7 +4374,7 @@ private var initializationResult: InitializationResult = {
     if (uniffi_wallpaper_bridge_checksum_method_wallpaperbridge_set_filter() != 4762) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_wallpaper_bridge_checksum_method_wallpaperbridge_set_launch_at_login() != 56926) {
+    if (uniffi_wallpaper_bridge_checksum_method_wallpaperbridge_set_launch_at_login() != 35969) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_wallpaper_bridge_checksum_method_wallpaperbridge_set_mirror_target() != 35966) {

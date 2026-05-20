@@ -185,6 +185,23 @@ final class BridgeStore {
         try await bridge.shutdown()
     }
 
+    func clearLogsAsync() throws {
+        let status = try bridge.clearLogs()
+        settingsSnapshot.storage = BridgeStorageStatus(
+            shaderCacheSizeBytes: settingsSnapshot.storage.shaderCacheSizeBytes,
+            logs: status
+        )
+        finishSnapshotApply()
+    }
+
+    func logFolderURL() throws -> URL {
+        URL(fileURLWithPath: try bridge.logFolderPath(), isDirectory: true)
+    }
+
+    func emitLog(level: BridgeLogLevel, file: String, line: UInt32, message: String) throws {
+        try bridge.emitGuiLog(level: level, file: file, line: line, message: message)
+    }
+
     private struct Snapshots {
         let app: BridgeAppSnapshot
         let library: BridgeLibrarySnapshot
@@ -218,7 +235,16 @@ final class BridgeStore {
                 appVersion: "",
                 gitSha: "",
                 bridgeVersion: "",
-                coreVersion: ""
+                coreVersion: "",
+                storage: BridgeStorageStatus(
+                    shaderCacheSizeBytes: 0,
+                    logs: BridgeLogStatus(
+                        logsRoot: "",
+                        activeSession: "",
+                        activeFile: "",
+                        activeFileSizeBytes: 0
+                    )
+                )
             )
         )
     }

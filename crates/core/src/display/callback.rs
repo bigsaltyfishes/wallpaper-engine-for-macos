@@ -55,7 +55,7 @@ impl<T: DisplayRefreshTarget> DisplayChangeRegistration<T> {
                         if !context.active.load(Ordering::Acquire) {
                             break;
                         }
-                        eprintln!("[wallpaper-core display] DisplayWatcher event: {event:?}");
+                        log::debug!("[wallpaper-core display] DisplayWatcher event: {event:?}");
                         Arc::clone(&context).schedule();
                     }
                 })

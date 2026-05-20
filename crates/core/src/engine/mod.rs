@@ -80,7 +80,7 @@ struct EngineRefreshTarget {
 impl DisplayRefreshTarget for EngineRefreshTarget {
     fn schedule(&self) {
         if let Err(error) = self.actor.tell(messages::RefreshDisplays).blocking_send() {
-            eprintln!(
+            log::warn!(
                 "[wallpaper-core display] skipped display refresh because actor mailbox failed: \
                  {error}"
             );

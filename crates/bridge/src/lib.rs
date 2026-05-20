@@ -9,6 +9,7 @@ pub mod config;
 pub mod display;
 pub mod engine;
 pub mod library;
+pub mod logging;
 pub mod login;
 pub mod paths;
 pub mod project;
@@ -20,11 +21,12 @@ mod tests;
 pub use api::{
     BridgeAppSnapshot, BridgeDisplayConfigRow, BridgeDisplayMode, BridgeDisplayMutationBundle,
     BridgeDisplaySettingsRow, BridgeError, BridgeErrorKind, BridgeLibraryScanStatus,
-    BridgeLibrarySnapshot, BridgeMonitorInfoRow, BridgeMonitorInformationSnapshot,
-    BridgePlaybackState, BridgePropertyDescriptor, BridgePropertyKind, BridgePropertyValue,
-    BridgeScalingMode, BridgeSettingsSnapshot, BridgeSliderMetadata, BridgeSnapshotBundle,
-    BridgeWallpaperEntry, BridgeWallpaperKind, BridgeWallpaperMutationBundle,
-    BridgeWallpaperOptionsSnapshot, WallpaperBridge,
+    BridgeLibrarySnapshot, BridgeLogLevel, BridgeLogStatus, BridgeMonitorInfoRow,
+    BridgeMonitorInformationSnapshot, BridgePlaybackState, BridgePropertyDescriptor,
+    BridgePropertyKind, BridgePropertyValue, BridgeScalingMode, BridgeSettingsSnapshot,
+    BridgeSliderMetadata, BridgeSnapshotBundle, BridgeStorageStatus, BridgeWallpaperEntry,
+    BridgeWallpaperKind, BridgeWallpaperMutationBundle, BridgeWallpaperOptionsSnapshot,
+    WallpaperBridge,
 };
 
 mod build {

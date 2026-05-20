@@ -3,7 +3,7 @@ import SwiftUI
 struct ProgramSettingsSection: View {
     @Environment(BridgeStore.self) private var store
     @State private var presentedError: BridgeErrorAlert?
-    @State private var launchAtLoginInProgress = false
+    @State private var bridgeActionInProgress = false
 
     var body: some View {
         Section("Program Settings") {
@@ -14,12 +14,24 @@ struct ProgramSettingsSection: View {
                     try await store.setLaunchAtLoginAsync(enabled: enabled)
                 }
             })
-            .disabled(!store.settingsSnapshot.launchAtLoginAvailable || launchAtLoginInProgress)
+            .disabled(!store.settingsSnapshot.launchAtLoginAvailable || bridgeActionInProgress)
 
             if !store.settingsSnapshot.launchAtLoginAvailable {
                 Text("Move Wallpaper Engine to Applications to enable launch at login.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+
+            LabeledContent("Logs") {
+                HStack(spacing: 8) {
+                    Button("Open") {
+                        openLogFolder()
+                    }
+                    Button("Clear") {
+                        clearLogs()
+                    }
+                    .disabled(bridgeActionInProgress)
+                }
             }
         }
         .alert(item: $presentedError) { error in
@@ -32,11 +44,11 @@ struct ProgramSettingsSection: View {
     }
 
     private func performAsyncBridgeAction(_ action: @escaping () async throws -> Void) {
-        guard !launchAtLoginInProgress else {
+        guard !bridgeActionInProgress else {
             return
         }
 
-        launchAtLoginInProgress = true
+        bridgeActionInProgress = true
         Task {
             do {
                 try await action()
@@ -44,7 +56,23 @@ struct ProgramSettingsSection: View {
             } catch {
                 presentedError = BridgeErrorAlert(error: error)
             }
-            launchAtLoginInProgress = false
+            bridgeActionInProgress = false
+        }
+    }
+
+    private func openLogFolder() {
+        do {
+            NSWorkspace.shared.open(try store.logFolderURL())
+        } catch {
+            presentedError = BridgeErrorAlert(error: error)
+        }
+    }
+
+    private func clearLogs() {
+        do {
+            try store.clearLogsAsync()
+        } catch {
+            presentedError = BridgeErrorAlert(error: error)
         }
     }
 }

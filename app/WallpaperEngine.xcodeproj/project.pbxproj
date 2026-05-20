@@ -29,6 +29,7 @@
 		0A1000010000000000000021 /* RichTextLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2000010000000000000024 /* RichTextLabel.swift */; };
 		0A1000010000000000000022 /* WallpaperOptionsEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2000010000000000000026 /* WallpaperOptionsEditorView.swift */; };
 		0A1000010000000000000023 /* ProgramSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2000010000000000000027 /* ProgramSettingsSection.swift */; };
+		0A1000010000000000000027 /* AppLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2000010000000000000031 /* AppLog.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -58,6 +59,7 @@
 		0A2000010000000000000025 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		0A2000010000000000000026 /* WallpaperOptionsEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperOptionsEditorView.swift; sourceTree = "<group>"; };
 		0A2000010000000000000027 /* ProgramSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgramSettingsSection.swift; sourceTree = "<group>"; };
+		0A2000010000000000000031 /* AppLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLog.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -85,6 +87,7 @@
 				0A2000010000000000000001 /* WallpaperEngineApp.swift */,
 				0A2000010000000000000002 /* AppDelegate.swift */,
 				0A4000010000000000000003 /* Bridge */,
+				0A4000010000000000000015 /* Logging */,
 				0A4000010000000000000005 /* ViewModels */,
 				0A4000010000000000000006 /* Views */,
 				0A4000010000000000000007 /* Resources */,
@@ -199,6 +202,14 @@
 			path = Settings;
 			sourceTree = "<group>";
 		};
+		0A4000010000000000000015 /* Logging */ = {
+			isa = PBXGroup;
+			children = (
+				0A2000010000000000000031 /* AppLog.swift */,
+			);
+			path = Logging;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -290,6 +301,7 @@
 				0A1000010000000000000019 /* DisplaySettingsSection.swift in Sources */,
 				0A1000010000000000000020 /* AboutSection.swift in Sources */,
 				0A1000010000000000000021 /* RichTextLabel.swift in Sources */,
+				0A1000010000000000000027 /* AppLog.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

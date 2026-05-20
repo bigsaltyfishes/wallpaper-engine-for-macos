@@ -7,7 +7,8 @@
 //! reconciliation and runtime state stay in `crate::engine`.
 
 use std::{
-    ffi::{CString, c_char, c_int, c_void},
+    ffi::{CStr, CString, c_char, c_int, c_void},
+    panic::{AssertUnwindSafe, catch_unwind},
     ptr::NonNull,
 };
 
@@ -35,6 +36,10 @@ impl OweBackend {
     /// Reserved for future backend initialization failures; currently always
     /// returns `Ok`.
     pub fn initialize() -> Result<Self, EngineError> {
+        unsafe {
+            UnwindSafeFFI::new("owe_set_log_callback")
+                .call(|| sys::owe_set_log_callback(Some(owe_log_callback)))?;
+        }
         Ok(Self)
     }
 
@@ -626,4 +631,44 @@ fn call_status(operation: &'static str, call: impl FnOnce() -> c_int) -> Result<
     } else {
         Err(EngineError::Render(unsafe { UnwindSafeFFI::last_error() }))
     }
+}
+
+#[allow(clippy::single_call_fn)]
+unsafe extern "C-unwind" fn owe_log_callback(
+    level: c_int,
+    file: *const c_char,
+    line: c_int,
+    message: *const c_char,
+) {
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        let file = copy_c_string(file).unwrap_or_else(|| "unknown".to_string());
+        let message = copy_c_string(message).unwrap_or_default();
+        let level = match level {
+            1 => log::Level::Error,
+            _ => log::Level::Info,
+        };
+        let line = u32::try_from(line).ok();
+
+        let args = format_args!("{message}");
+        let record = log::Record::builder()
+            .args(args)
+            .level(level)
+            .target("open_wallpaper_engine")
+            .file(Some(&file))
+            .line(line)
+            .build();
+        log::logger().log(&record);
+    }));
+}
+
+fn copy_c_string(value: *const c_char) -> Option<String> {
+    if value.is_null() {
+        return None;
+    }
+
+    Some(
+        unsafe { CStr::from_ptr(value) }
+            .to_string_lossy()
+            .into_owned(),
+    )
 }

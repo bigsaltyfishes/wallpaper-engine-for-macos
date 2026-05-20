@@ -26,7 +26,10 @@ pub fn scan(root: &Path) -> Result<Vec<WallpaperEntry>, BridgeError> {
         let child = match child {
             Ok(child) => child,
             Err(error) => {
-                tracing::warn!(root = %root.display(), error = %error, "skipped unreadable workshop child");
+                log::warn!(
+                    "skipped unreadable workshop child root={} error={error}",
+                    root.display()
+                );
                 continue;
             }
         };
@@ -34,24 +37,29 @@ pub fn scan(root: &Path) -> Result<Vec<WallpaperEntry>, BridgeError> {
         let file_type = match child.file_type() {
             Ok(file_type) => file_type,
             Err(error) => {
-                tracing::warn!(
-                    path = %child.path().display(),
-                    error = %error,
-                    "skipped workshop child with unreadable file type"
+                log::warn!(
+                    "skipped workshop child with unreadable file type path={} error={error}",
+                    child.path().display()
                 );
                 continue;
             }
         };
 
         if !file_type.is_dir() {
-            tracing::debug!(path = %child.path().display(), "skipped non-directory workshop child");
+            log::debug!(
+                "skipped non-directory workshop child path={}",
+                child.path().display()
+            );
             continue;
         }
 
         let folder = child.path();
         let project_json = folder.join("project.json");
         if !project_json.is_file() {
-            tracing::debug!(path = %folder.display(), "skipped workshop folder without project.json");
+            log::debug!(
+                "skipped workshop folder without project.json path={}",
+                folder.display()
+            );
             continue;
         }
 
@@ -59,11 +67,11 @@ pub fn scan(root: &Path) -> Result<Vec<WallpaperEntry>, BridgeError> {
         let model = match ProjectModel::load(&workshop_id, &project_json) {
             Ok(model) => model,
             Err(error) => {
-                tracing::warn!(
-                    workshop_id = %workshop_id,
-                    path = %project_json.display(),
-                    error = %error,
-                    "skipped workshop folder with unloadable project.json"
+                log::warn!(
+                    "skipped workshop folder with unloadable project.json workshop_id={} path={} \
+                     error={error}",
+                    workshop_id,
+                    project_json.display()
                 );
                 continue;
             }

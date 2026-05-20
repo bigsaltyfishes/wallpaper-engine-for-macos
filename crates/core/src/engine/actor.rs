@@ -414,7 +414,7 @@ impl EngineActor {
                         let before_display = runtime.desc.display.clone();
                         match runtime.update_window_display(desc.display.clone()) {
                             Ok(()) => {
-                                eprintln!(
+                                log::debug!(
                                     "[wallpaper-core display] updated runtime window in place: \
                                      key={key:?} before_display={before_display:?} \
                                      after_display={:?}",
@@ -434,7 +434,7 @@ impl EngineActor {
                             runtime.reconfigure_for_display(self.backend, desc.display.clone());
                         match reconfigure_result {
                             Ok(()) => {
-                                eprintln!(
+                                log::debug!(
                                     "[wallpaper-core display] reconfigured runtime surface in \
                                      place: key={key:?} before_display={before_display:?} \
                                      after_display={:?}",
@@ -443,7 +443,7 @@ impl EngineActor {
                                 runtime
                             }
                             Err(reconfigure_error) => {
-                                eprintln!(
+                                log::warn!(
                                     "[wallpaper-core display] fast surface reconfigure failed, \
                                      falling back to full rebuild: key={key:?} \
                                      before_display={before_display:?} after_display={:?} \
@@ -453,7 +453,7 @@ impl EngineActor {
                                 match SceneRuntime::open(self.backend, &desc, runtime_state) {
                                     Ok(replacement) => {
                                         if let Err(error) = runtime.close() {
-                                            eprintln!(
+                                            log::warn!(
                                                 "[wallpaper-core display] failed to close \
                                                  replaced display runtime: {error}"
                                             );
