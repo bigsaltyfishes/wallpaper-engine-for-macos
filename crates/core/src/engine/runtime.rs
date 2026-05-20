@@ -169,8 +169,10 @@ impl SceneRuntime {
         desc: SceneDesc,
         render_resolution: Option<(u32, u32)>,
     ) -> Result<(), EngineError> {
-        let state = self.runtime_state();
+        let mut state = self.runtime_state();
+        let current_descriptor_state = SceneRuntimeState::try_from(&self.desc)?;
         let descriptor_state = SceneRuntimeState::try_from(&desc)?;
+        state.inherit_descriptor_property_override(&current_descriptor_state, &descriptor_state);
         let old_display = self.desc.display.clone();
         let window = self.window.as_mut().ok_or_else(|| {
             EngineError::Platform("wallpaper window is already closed".to_string())
@@ -213,6 +215,7 @@ impl SceneRuntime {
         let mut old_renderer = std::mem::replace(&mut self.renderer, renderer);
         self.desc = desc;
         self.render_resolution = render_resolution;
+        self.property_override_json = state.property_override_json;
         old_renderer.close()
     }
 
@@ -294,7 +297,7 @@ impl SceneRuntime {
 
         // 5. OWE resumes after finishing the surface transaction. Preserve an
         //    already-paused runtime by restoring that state before returning.
-        if runtime_state.requires_pause_restore_after_surface_reconfigure() {
+        if runtime_state.paused {
             self.renderer.set_paused(true)?;
         }
 
@@ -415,8 +418,15 @@ impl SceneRuntimeState {
         }
     }
 
-    fn requires_pause_restore_after_surface_reconfigure(&self) -> bool {
-        self.paused
+    fn inherit_descriptor_property_override(
+        &mut self,
+        current_descriptor_state: &SceneRuntimeState,
+        next_descriptor_state: &SceneRuntimeState,
+    ) {
+        if self.property_override_json == current_descriptor_state.property_override_json {
+            self.property_override_json
+                .clone_from(&next_descriptor_state.property_override_json);
+        }
     }
 }
 
@@ -503,18 +513,57 @@ mod tests {
     }
 
     #[test]
+    fn descriptor_property_override_change_is_not_reset_when_runtime_matches_current_descriptor() {
+        let mut state = runtime_state(None);
+        let current_descriptor_state = runtime_state(None);
+        let next_descriptor_state = runtime_state(Some(r#"{"newproperty24":false}"#));
+
+        state.inherit_descriptor_property_override(
+            &current_descriptor_state,
+            &next_descriptor_state,
+        );
+
+        assert_eq!(
+            state.property_override_json.as_deref(),
+            Some(r#"{"newproperty24":false}"#)
+        );
+        assert!(matches!(
+            state.property_override_update(&next_descriptor_state),
+            PropertyOverrideUpdate::Unchanged
+        ));
+    }
+
+    #[test]
+    fn explicit_runtime_property_reset_still_overrides_descriptor_refresh() {
+        let mut state = runtime_state(None);
+        let current_descriptor_state = runtime_state(Some(r#"{"newproperty24":true}"#));
+        let next_descriptor_state = runtime_state(Some(r#"{"newproperty24":false}"#));
+
+        state.inherit_descriptor_property_override(
+            &current_descriptor_state,
+            &next_descriptor_state,
+        );
+
+        assert_eq!(state.property_override_json, None);
+        assert!(matches!(
+            state.property_override_update(&next_descriptor_state),
+            PropertyOverrideUpdate::Reset
+        ));
+    }
+
+    #[test]
     fn paused_runtime_requires_pause_restore_after_surface_reconfigure() {
         let mut state = runtime_state(None);
         state.paused = true;
 
-        assert!(state.requires_pause_restore_after_surface_reconfigure());
+        assert!(state.paused);
     }
 
     #[test]
     fn running_runtime_does_not_require_pause_restore_after_surface_reconfigure() {
         let state = runtime_state(None);
 
-        assert!(!state.requires_pause_restore_after_surface_reconfigure());
+        assert!(!state.paused);
     }
 
     fn runtime_state(property_override_json: Option<&str>) -> SceneRuntimeState {
