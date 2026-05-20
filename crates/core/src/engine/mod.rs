@@ -703,6 +703,46 @@ mod tests {
     }
 
     #[test]
+    fn runtime_refresh_mode_rebuilds_when_shader_refresh_is_forced() {
+        let current = crate::project::SceneDesc::builder(
+            crate::DisplayDesc::new(1, 0, 0, 1920, 1080, 1.0),
+            "/tmp/project.json",
+        )
+        .assets_path("/tmp/assets")
+        .shader_cache_path("/tmp/cache")
+        .build()
+        .expect("scene should build");
+        let mut desired = current.clone();
+        desired.force_shader_refresh = true;
+
+        assert_eq!(
+            RuntimeRefreshMode::from_transition(Some(&current), &desired),
+            RuntimeRefreshMode::RebuildExistingRuntime
+        );
+    }
+
+    #[test]
+    fn runtime_refresh_mode_treats_completed_shader_refresh_as_unchanged() {
+        let mut current = crate::project::SceneDesc::builder(
+            crate::DisplayDesc::new(1, 0, 0, 1920, 1080, 1.0),
+            "/tmp/project.json",
+        )
+        .assets_path("/tmp/assets")
+        .shader_cache_path("/tmp/cache")
+        .force_shader_refresh(true)
+        .build()
+        .expect("scene should build");
+        current.mark_shader_refresh_complete();
+        let mut desired = current.clone();
+        desired.force_shader_refresh = false;
+
+        assert_eq!(
+            RuntimeRefreshMode::from_transition(Some(&current), &desired),
+            RuntimeRefreshMode::Unchanged
+        );
+    }
+
+    #[test]
     fn runtime_refresh_mode_updates_window_only_when_origin_changes() {
         let desc = crate::project::SceneDesc::new(
             crate::DisplayDesc::new(3, 1920, 0, 1920, 1080, 1.0),

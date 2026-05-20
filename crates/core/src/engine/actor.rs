@@ -476,7 +476,7 @@ impl EngineActor {
                         let rebuild_result = if runtime.desc.same_wallpaper(&desc) {
                             runtime.resize_or_rebuild(self.backend, desc.display.clone())
                         } else {
-                            runtime.replace_wallpaper(self.backend, desc)
+                            runtime.replace_wallpaper(self.backend, &desc)
                         };
                         if let Err(error) = rebuild_result {
                             self.restore_failed_runtime_refresh(&key, handle, Some(runtime))?;

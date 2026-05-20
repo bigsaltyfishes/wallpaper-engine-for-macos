@@ -13,6 +13,7 @@ use crate::{
     config::{AppConfig, ConfigStore, MonitorCfg, SerializedSelector, WallpaperConfig},
     engine::FakeEngineFacade,
     login::{LaunchAtLoginController, LaunchAtLoginStatus},
+    paths::BridgePaths,
 };
 
 #[tokio::test]
@@ -1824,6 +1825,45 @@ async fn refresh_displays_does_not_empty_reconcile_primary_wallpaper_during_tran
     bridge.refresh_displays().await.unwrap();
 
     assert_latest_scene(&engine, 3, "300");
+}
+
+#[tokio::test]
+async fn clear_shader_cache_removes_cache_and_rebuilds_active_scenes() {
+    let root = tempfile::tempdir().unwrap();
+    let paths = BridgePaths::for_home(root.path());
+    std::fs::create_dir_all(paths.shader_cache_root()).unwrap();
+    std::fs::write(paths.shader_cache_root().join("stale-cache.bin"), [1, 2, 3]).unwrap();
+
+    let engine = FakeEngineFacade::default();
+    engine.set_snapshot(vec![display_snapshot(1)]);
+    let bridge = BridgeBuilder::new(engine.clone())
+        .with_paths(paths.clone())
+        .build()
+        .expect("tokio runtime and config load for wallpaper bridge");
+    bridge
+        .inject_scene_wallpaper_config_for_test("100", "Scene")
+        .await;
+    apply_primary_wallpaper(&bridge, "100").await;
+    wait_for_reconcile_count(&engine, 1);
+
+    let snapshot = bridge.clear_shader_cache().await.unwrap();
+
+    wait_for_reconcile_count(&engine, 2);
+    assert!(paths.shader_cache_root().is_dir());
+    assert!(!paths.shader_cache_root().join("stale-cache.bin").exists());
+    assert_eq!(snapshot.storage.shader_cache_size_bytes, 0);
+    assert_latest_scene(&engine, 1, "100");
+    let calls = engine.calls();
+    let refreshed_scene = calls
+        .last()
+        .expect("cache clear should reconcile scenes")
+        .iter()
+        .find(|scene| scene.display.display_id == 1)
+        .expect("primary display should keep an active scene");
+    assert!(
+        refreshed_scene.force_shader_refresh,
+        "cache clear must force active scenes to rebuild their shader cache"
+    );
 }
 
 fn display_snapshot(display_id: u32) -> DisplaySnapshotEntry {

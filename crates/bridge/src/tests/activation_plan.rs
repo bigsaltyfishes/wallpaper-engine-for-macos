@@ -5,6 +5,7 @@ use wallpaper_core::{DisplayDesc, DisplayIdentity, DisplaySelector, DisplaySnaps
 use crate::{
     config::{AppConfig, MonitorCfg, SerializedSelector, WallpaperConfig},
     engine::ActivationInputs,
+    paths::BridgePaths,
 };
 
 #[test]
@@ -27,12 +28,15 @@ fn activation_plan_marks_scenes_paused_when_global_playback_is_paused() {
         window_active: true,
         assignment: None,
     }];
+    let paths = BridgePaths::for_home("/Users/example");
 
     let scenes = ActivationInputs {
         app_config: &config,
         wallpapers: &wallpapers,
         displays: &displays,
         paused: true,
+        paths: &paths,
+        force_shader_refresh: false,
     }
     .build()
     .unwrap();
@@ -77,11 +81,14 @@ fn activation_plan_gives_primary_wallpaper_to_current_primary_display() {
     }
 
     let displays = vec![display_a.clone(), display_b.clone()];
+    let paths = BridgePaths::for_home("/Users/example");
     let scenes = ActivationInputs {
         app_config: &config,
         wallpapers: &wallpapers,
         displays: &displays,
         paused: false,
+        paths: &paths,
+        force_shader_refresh: false,
     }
     .build()
     .unwrap();
@@ -95,6 +102,8 @@ fn activation_plan_gives_primary_wallpaper_to_current_primary_display() {
         wallpapers: &wallpapers,
         displays: &displays,
         paused: false,
+        paths: &paths,
+        force_shader_refresh: false,
     }
     .build()
     .unwrap();

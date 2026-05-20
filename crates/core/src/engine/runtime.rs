@@ -102,6 +102,8 @@ impl SceneRuntime {
         desc: &SceneDesc,
         state: SceneRuntimeState,
     ) -> Result<Self, EngineError> {
+        let mut stored_desc = desc.clone();
+        stored_desc.mark_shader_refresh_complete();
         let window = WallpaperWindow::builder(desc.display.clone()).open()?;
         let renderer = backend.open_scene(
             desc,
@@ -124,6 +126,7 @@ impl SceneRuntime {
             property_override_json: state.property_override_json,
             window: Some(window),
         };
+        runtime.desc = stored_desc;
         runtime.apply_runtime_properties(&descriptor_state)?;
         Ok(runtime)
     }
@@ -160,18 +163,20 @@ impl SceneRuntime {
         width: u32,
         height: u32,
     ) -> Result<(), EngineError> {
-        self.rebuild_for_desc(backend, self.desc.clone(), Some((width, height)))
+        self.rebuild_for_desc(backend, &self.desc.clone(), Some((width, height)))
     }
 
     fn rebuild_for_desc(
         &mut self,
         backend: OweBackend,
-        desc: SceneDesc,
+        desc: &SceneDesc,
         render_resolution: Option<(u32, u32)>,
     ) -> Result<(), EngineError> {
         let mut state = self.runtime_state();
         let current_descriptor_state = SceneRuntimeState::try_from(&self.desc)?;
-        let descriptor_state = SceneRuntimeState::try_from(&desc)?;
+        let descriptor_state = SceneRuntimeState::try_from(desc)?;
+        let mut stored_desc = desc.clone();
+        stored_desc.mark_shader_refresh_complete();
         state.inherit_descriptor_property_override(&current_descriptor_state, &descriptor_state);
         let old_display = self.desc.display.clone();
         let window = self.window.as_mut().ok_or_else(|| {
@@ -192,7 +197,7 @@ impl SceneRuntime {
         let metal_layer = window.update_layer(desc.display.clone())?;
 
         let mut renderer = match backend.open_scene(
-            &desc,
+            desc,
             metal_layer,
             self.scaling_mode,
             self.scaling_factor,
@@ -213,7 +218,7 @@ impl SceneRuntime {
             return Err(error);
         }
         let mut old_renderer = std::mem::replace(&mut self.renderer, renderer);
-        self.desc = desc;
+        self.desc = stored_desc;
         self.render_resolution = render_resolution;
         self.property_override_json = state.property_override_json;
         old_renderer.close()
@@ -222,7 +227,7 @@ impl SceneRuntime {
     pub fn replace_wallpaper(
         &mut self,
         backend: OweBackend,
-        desc: SceneDesc,
+        desc: &SceneDesc,
     ) -> Result<(), EngineError> {
         self.rebuild_for_desc(backend, desc, self.render_resolution)
     }
@@ -242,7 +247,7 @@ impl SceneRuntime {
         // full scene rebuild is required.
         let mut desc = self.desc.clone();
         desc.display = display;
-        self.rebuild_for_desc(backend, desc, self.render_resolution)
+        self.rebuild_for_desc(backend, &desc, self.render_resolution)
     }
 
     pub fn update_window_display(&mut self, display: DisplayDesc) -> Result<(), EngineError> {

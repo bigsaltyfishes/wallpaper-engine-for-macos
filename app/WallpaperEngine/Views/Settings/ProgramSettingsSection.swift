@@ -4,6 +4,7 @@ struct ProgramSettingsSection: View {
     @Environment(BridgeStore.self) private var store
     @State private var presentedError: BridgeErrorAlert?
     @State private var bridgeActionInProgress = false
+    @State private var showingShaderCacheWarning = false
 
     var body: some View {
         Section("Program Settings") {
@@ -20,6 +21,20 @@ struct ProgramSettingsSection: View {
                 Text("Move Wallpaper Engine to Applications to enable launch at login.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+
+            LabeledContent {
+                Button("Clear") {
+                    showingShaderCacheWarning = true
+                }
+                .disabled(bridgeActionInProgress)
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Shader Cache")
+                    Text(StorageFormat.bytes(store.settingsSnapshot.storage.shaderCacheSizeBytes))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             LabeledContent("Logs") {
@@ -39,6 +54,22 @@ struct ProgramSettingsSection: View {
                 title: Text("Bridge Error"),
                 message: Text(error.message),
                 dismissButton: .default(Text("OK"))
+            )
+        }
+        .confirmationDialog(
+            "Clear Shader Cache?",
+            isPresented: $showingShaderCacheWarning,
+            titleVisibility: .visible
+        ) {
+            Button("Clear Anyway", role: .destructive) {
+                performAsyncBridgeAction {
+                    try await store.clearShaderCacheAsync()
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(
+                "Clearing the shader cache may temporarily reduce performance. Currently active scene wallpapers will be rebuilt to regenerate fresh shaders."
             )
         }
     }

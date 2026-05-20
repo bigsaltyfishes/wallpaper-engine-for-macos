@@ -22,6 +22,8 @@ pub struct ActivationInputs<'a> {
     pub wallpapers: &'a BTreeMap<String, WallpaperConfig>,
     pub displays: &'a [DisplaySnapshotEntry],
     pub paused: bool,
+    pub paths: &'a BridgePaths,
+    pub force_shader_refresh: bool,
 }
 
 impl ActivationInputs<'_> {
@@ -75,6 +77,8 @@ impl ActivationInputs<'_> {
                 wallpaper,
                 monitor,
                 self.paused,
+                self.paths,
+                self.force_shader_refresh,
             )?;
             used_displays.push(display);
             scenes.push(scene);
@@ -130,6 +134,8 @@ pub trait SceneDescBuilderExt {
         wallpaper: &WallpaperConfig,
         monitor: &MonitorCfg,
         paused: bool,
+        paths: &BridgePaths,
+        force_shader_refresh: bool,
     ) -> Result<SceneDesc, BridgeError>
     where
         Self: Sized;
@@ -142,8 +148,9 @@ impl SceneDescBuilderExt for SceneDescBuilder {
         wallpaper: &WallpaperConfig,
         monitor: &MonitorCfg,
         paused: bool,
+        paths: &BridgePaths,
+        force_shader_refresh: bool,
     ) -> Result<SceneDesc, BridgeError> {
-        let paths = BridgePaths::new();
         let project_json = paths
             .steam_workshop_root()
             .join(workshop_id)
@@ -201,7 +208,8 @@ impl SceneDescBuilderExt for SceneDescBuilder {
             .audio_response_enabled(wallpaper.audio.response_enabled)
             .audio_volume(audio_volume.into())
             .audio_muted(wallpaper.audio.muted)
-            .shader_cache_path(paths.shader_cache_root().to_string_lossy());
+            .shader_cache_path(paths.shader_cache_root().to_string_lossy())
+            .force_shader_refresh(force_shader_refresh);
 
         if let Some(json) = property_override_json {
             builder = builder.property_override_json(json);

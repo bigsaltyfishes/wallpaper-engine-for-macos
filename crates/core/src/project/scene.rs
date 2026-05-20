@@ -459,6 +459,12 @@ impl SceneDesc {
             && self.shader_cache_path == other.shader_cache_path
             && self.force_shader_refresh == other.force_shader_refresh
     }
+
+    /// Marks a one-shot shader refresh request as consumed after the renderer
+    /// has been opened or rebuilt with that descriptor.
+    pub fn mark_shader_refresh_complete(&mut self) {
+        self.force_shader_refresh = false;
+    }
 }
 
 /// Display-independent wallpaper scene configuration.

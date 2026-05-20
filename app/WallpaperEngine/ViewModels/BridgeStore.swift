@@ -185,6 +185,11 @@ final class BridgeStore {
         try await bridge.shutdown()
     }
 
+    func clearShaderCacheAsync() async throws {
+        settingsSnapshot = try await bridge.clearShaderCache()
+        finishSnapshotApply()
+    }
+
     func clearLogsAsync() throws {
         let status = try bridge.clearLogs()
         settingsSnapshot.storage = BridgeStorageStatus(

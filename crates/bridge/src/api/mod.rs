@@ -33,13 +33,13 @@ use crate::{
     actor::{
         BridgeActorHandle,
         messages::{
-            ApplyWallpaperOptions, Bootstrap, CancelWallpaperOptions, EditProperty,
-            EjectWallpaperFromDisplay, GetAllSnapshots, GetAppSnapshot, GetLibrarySnapshot,
-            GetMonitorInformationSnapshot, GetSettingsSnapshot, GetWallpaperOptionsSnapshot,
-            RefreshDisplays, RefreshLibrary, RestorePropertyDefault, SelectWallpaper,
-            SetAudioResponseEnabled, SetDisplayConfigEnabled, SetDisplayEnabled, SetDisplayMode,
-            SetFilter, SetGlobalPlayback, SetLaunchAtLogin, SetMirrorTarget, SetMuted,
-            SetScalingFactor, SetScalingMode, SetTargetFps, SetVolume, Shutdown,
+            ApplyWallpaperOptions, Bootstrap, CancelWallpaperOptions, ClearShaderCache,
+            EditProperty, EjectWallpaperFromDisplay, GetAllSnapshots, GetAppSnapshot,
+            GetLibrarySnapshot, GetMonitorInformationSnapshot, GetSettingsSnapshot,
+            GetWallpaperOptionsSnapshot, RefreshDisplays, RefreshLibrary, RestorePropertyDefault,
+            SelectWallpaper, SetAudioResponseEnabled, SetDisplayConfigEnabled, SetDisplayEnabled,
+            SetDisplayMode, SetFilter, SetGlobalPlayback, SetLaunchAtLogin, SetMirrorTarget,
+            SetMuted, SetScalingFactor, SetScalingMode, SetTargetFps, SetVolume, Shutdown,
         },
         state::BridgeActorState,
     },
@@ -342,6 +342,14 @@ impl WallpaperBridge {
     /// Returns an error when a new log session cannot be created.
     pub fn clear_logs(&self) -> Result<BridgeLogStatus, BridgeError> {
         crate::logging::ApplicationLogger::clear().map(bridge_log_status)
+    }
+
+    /// # Errors
+    ///
+    /// Returns an error when the shader cache cannot be cleared or active
+    /// scenes cannot be rebuilt.
+    pub async fn clear_shader_cache(&self) -> Result<BridgeSettingsSnapshot, BridgeError> {
+        self.actor.ask(ClearShaderCache).await
     }
 
     /// # Errors

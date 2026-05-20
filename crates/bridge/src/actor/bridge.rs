@@ -1,5 +1,6 @@
 use std::{
     collections::{BTreeMap, HashSet},
+    fs,
     sync::Arc,
 };
 
@@ -18,7 +19,7 @@ use wallpaper_core::{
 use crate::{
     actor::{
         messages::{
-            self, ApplyWallpaperOptions, Bootstrap, CancelWallpaperOptions,
+            self, ApplyWallpaperOptions, Bootstrap, CancelWallpaperOptions, ClearShaderCache,
             CommitApplyAfterReconcile, CommitDisplayAfterReconcile, CompleteRestoreAfterReconcile,
             EditProperty, EjectWallpaperFromDisplay, GetAllSnapshots, GetAppSnapshot,
             GetLibrarySnapshot, GetMonitorInformationSnapshot, GetSettingsSnapshot,
@@ -73,6 +74,7 @@ pub struct BridgeActor<E: EngineFacade> {
     #[allow(dead_code)]
     pub config_store: Option<ConfigStore>,
     launch_at_login: LaunchAtLoginController,
+    paths: BridgePaths,
 }
 
 #[derive(Clone)]
@@ -103,6 +105,7 @@ impl<E: EngineFacade> BridgeActorHandle<E> {
         engine: E,
         config_store: Option<ConfigStore>,
         launch_at_login: LaunchAtLoginController,
+        paths: BridgePaths,
     ) -> Result<Self, BridgeError> {
         let actor = BridgeActor {
             state,
@@ -115,6 +118,7 @@ impl<E: EngineFacade> BridgeActorHandle<E> {
             engine,
             config_store,
             launch_at_login,
+            paths,
         };
 
         let runtime = Arc::new(
@@ -226,7 +230,7 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
             library: self.library_snapshot(),
             wallpaper_options: None,
             monitor_information: self.state.monitor_info(&displays),
-            settings: self.state.settings(&displays, launch_at_login),
+            settings: self.state.settings(&displays, launch_at_login, &self.paths),
         }
     }
 
@@ -241,7 +245,7 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
             library: self.library_snapshot(),
             wallpaper_options: Some(self.state.options(&displays, wallpaper_id)?),
             monitor_information: self.state.monitor_info(&displays),
-            settings: self.state.settings(&displays, launch_at_login),
+            settings: self.state.settings(&displays, launch_at_login, &self.paths),
         })
     }
 
@@ -256,7 +260,7 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
             library: self.library_snapshot(),
             wallpaper_options: self.state.options(&displays, wallpaper_id)?,
             monitor_information: self.state.monitor_info(&displays),
-            settings: self.state.settings(&displays, launch_at_login),
+            settings: self.state.settings(&displays, launch_at_login, &self.paths),
         })
     }
 
@@ -267,7 +271,7 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
             app: self.app_snapshot(),
             library: self.library_snapshot(),
             monitor_information: self.state.monitor_info(&displays),
-            settings: self.state.settings(&displays, launch_at_login),
+            settings: self.state.settings(&displays, launch_at_login, &self.paths),
         }
     }
 
@@ -501,6 +505,8 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
             wallpapers: &self.state.wallpaper_configs,
             displays,
             paused: self.playback_paused(),
+            paths: &self.paths,
+            force_shader_refresh: false,
         }
         .build()?;
         let snapshot = self.engine.display_snapshot();
@@ -563,8 +569,10 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
         let app_config = self.state.app_config.clone();
         let wallpaper_configs = self.state.wallpaper_configs.clone();
         let paused = self.playback_paused();
+        let paths = self.paths.clone();
         tokio::spawn(async move {
-            let result = reconcile_with(engine, app_config, wallpaper_configs, paused).await;
+            let result =
+                reconcile_with(engine, app_config, wallpaper_configs, paused, paths, false).await;
             let _ = actor
                 .ask(CompleteRestoreAfterReconcile { result, generation })
                 .await;
@@ -598,6 +606,8 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
             app_config,
             wallpaper_configs,
             self.playback_paused(),
+            self.paths.clone(),
+            false,
         )
         .await
     }
@@ -613,12 +623,15 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
         let paused = self.playback_paused();
         let actor = ctx.actor_ref().clone();
         let engine = self.engine.clone();
+        let paths = self.paths.clone();
         ctx.spawn(async move {
             let scenes = match reconcile_with(
                 engine,
                 app_config.clone(),
                 wallpaper_configs.clone(),
                 paused,
+                paths,
+                false,
             )
             .await
             {
@@ -771,7 +784,7 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
         let mut candidate_state = self.state.clone();
         candidate_state.app_config = app_config.clone();
         candidate_state
-            .settings(displays, self.launch_at_login.status())
+            .settings(displays, self.launch_at_login.status(), &self.paths)
             .displays
             .into_iter()
             .map(|row| (row.display_id.clone(), row))
@@ -903,6 +916,8 @@ async fn reconcile_with<E: EngineFacade>(
     app_config: AppConfig,
     wallpaper_configs: BTreeMap<String, WallpaperConfig>,
     paused: bool,
+    paths: BridgePaths,
+    force_shader_refresh: bool,
 ) -> Result<Vec<SceneDesc>, BridgeError> {
     let displays = engine.display_snapshot();
     let scenes = ActivationInputs {
@@ -910,6 +925,8 @@ async fn reconcile_with<E: EngineFacade>(
         wallpapers: &wallpaper_configs,
         displays: &displays,
         paused,
+        paths: &paths,
+        force_shader_refresh,
     }
     .build()?;
     let results = engine
@@ -1055,7 +1072,53 @@ impl<E: EngineFacade + Clone> Message<GetSettingsSnapshot> for BridgeActor<E> {
         let displays = self.engine.display_snapshot();
         Ok(self
             .state
-            .settings(&displays, self.launch_at_login.status()))
+            .settings(&displays, self.launch_at_login.status(), &self.paths))
+    }
+}
+
+impl<E: EngineFacade + Clone> Message<ClearShaderCache> for BridgeActor<E> {
+    type Reply = messages::ClearShaderCacheReply;
+
+    async fn handle(
+        &mut self,
+        _msg: ClearShaderCache,
+        _ctx: &mut Context<Self, Self::Reply>,
+    ) -> Self::Reply {
+        let cache_root = self.paths.shader_cache_root();
+        match fs::remove_dir_all(&cache_root) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(BridgeError::Error {
+                    kind: crate::api::BridgeErrorKind::Io,
+                    message: format!("failed to clear shader cache: {error}"),
+                });
+            }
+        }
+        fs::create_dir_all(&cache_root).map_err(|error| BridgeError::Error {
+            kind: crate::api::BridgeErrorKind::Io,
+            message: format!("failed to recreate shader cache: {error}"),
+        })?;
+
+        self.load_wallpapers()?;
+        let app_config = self.state.app_config.clone();
+        let wallpaper_configs = self.state.wallpaper_configs.clone();
+        let scenes = reconcile_with(
+            self.engine.clone(),
+            app_config,
+            wallpaper_configs,
+            self.playback_paused(),
+            self.paths.clone(),
+            true,
+        )
+        .await?;
+        self.state.set_active_ids_from_scenes(&scenes);
+        self.bump_generation();
+
+        let displays = self.engine.display_snapshot();
+        Ok(self
+            .state
+            .settings(&displays, self.launch_at_login.status(), &self.paths))
     }
 }
 
@@ -1929,6 +1992,8 @@ impl<E: EngineFacade + Clone> Message<ApplyWallpaperOptions> for BridgeActor<E> 
                         wallpapers: &wallpaper_configs,
                         displays: &displays,
                         paused,
+                        paths: &self.paths,
+                        force_shader_refresh: false,
                     }
                     .build()
                 })
@@ -1940,20 +2005,29 @@ impl<E: EngineFacade + Clone> Message<ApplyWallpaperOptions> for BridgeActor<E> 
             let actor = ctx.actor_ref().clone();
             let engine = self.engine.clone();
             let wallpaper_id = msg.wallpaper_id;
+            let paths = self.paths.clone();
             return ctx.spawn(async move {
-                let scenes =
-                    match reconcile_with(engine, app_config, wallpaper_configs, paused).await {
-                        Ok(scenes) => scenes,
-                        Err(error) => {
-                            let _ = actor
-                                .ask(ReconcileFailed {
-                                    error: duplicate_error(&error),
-                                    generation,
-                                })
-                                .await;
-                            return Err(error);
-                        }
-                    };
+                let scenes = match reconcile_with(
+                    engine,
+                    app_config,
+                    wallpaper_configs,
+                    paused,
+                    paths,
+                    false,
+                )
+                .await
+                {
+                    Ok(scenes) => scenes,
+                    Err(error) => {
+                        let _ = actor
+                            .ask(ReconcileFailed {
+                                error: duplicate_error(&error),
+                                generation,
+                            })
+                            .await;
+                        return Err(error);
+                    }
+                };
                 actor
                     .ask(CommitApplyAfterReconcile {
                         wallpaper_id,

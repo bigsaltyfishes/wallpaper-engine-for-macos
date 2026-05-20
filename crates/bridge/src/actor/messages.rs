@@ -24,6 +24,8 @@ pub struct GetMonitorInformationSnapshot;
 
 pub struct GetSettingsSnapshot;
 
+pub struct ClearShaderCache;
+
 pub struct GetWallpaperOptionsSnapshot {
     pub wallpaper_id: String,
 }
@@ -192,6 +194,7 @@ pub type AppSnapshotReply = Result<BridgeAppSnapshot, BridgeError>;
 pub type LibrarySnapshotReply = Result<BridgeLibrarySnapshot, BridgeError>;
 pub type MonitorInformationSnapshotReply = Result<BridgeMonitorInformationSnapshot, BridgeError>;
 pub type SettingsSnapshotReply = Result<BridgeSettingsSnapshot, BridgeError>;
+pub type ClearShaderCacheReply = Result<BridgeSettingsSnapshot, BridgeError>;
 pub type WallpaperOptionsSnapshotReply = Result<BridgeWallpaperOptionsSnapshot, BridgeError>;
 pub type TestMutationReply = Result<(), BridgeError>;
 pub type SelectWallpaperReply = AllSnapshotsReply;
