@@ -33,6 +33,7 @@
 		0A1000010000000000000025 /* UpdateAvailableWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2000010000000000000029 /* UpdateAvailableWindow.swift */; };
 		0A1000010000000000000026 /* UpdateChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2000010000000000000030 /* UpdateChecker.swift */; };
 		0A1000010000000000000027 /* AppLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2000010000000000000031 /* AppLog.swift */; };
+		843F72EB2FBDD0AD0068F8B7 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 843F72EA2FBDD0AD0068F8B7 /* InfoPlist.xcstrings */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -66,6 +67,7 @@
 		0A2000010000000000000029 /* UpdateAvailableWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateAvailableWindow.swift; sourceTree = "<group>"; };
 		0A2000010000000000000030 /* UpdateChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateChecker.swift; sourceTree = "<group>"; };
 		0A2000010000000000000031 /* AppLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLog.swift; sourceTree = "<group>"; };
+		843F72EA2FBDD0AD0068F8B7 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -144,6 +146,7 @@
 		0A4000010000000000000007 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				843F72EA2FBDD0AD0068F8B7 /* InfoPlist.xcstrings */,
 				0A2000010000000000000007 /* Assets.xcassets */,
 				0A2000010000000000000025 /* Info.plist */,
 				0A2000010000000000000008 /* Localizable.xcstrings */,
@@ -286,6 +289,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				843F72EB2FBDD0AD0068F8B7 /* InfoPlist.xcstrings in Resources */,
 				0A1000010000000000000007 /* Assets.xcassets in Resources */,
 				0A1000010000000000000008 /* Localizable.xcstrings in Resources */,
 			);
@@ -387,6 +391,7 @@
 				SDKROOT = macosx;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
 			name = Debug;
@@ -443,6 +448,7 @@
 				SDKROOT = macosx;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 			};
 			name = Release;

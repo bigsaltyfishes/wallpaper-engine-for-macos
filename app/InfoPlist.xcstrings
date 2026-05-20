@@ -1,0 +1,23 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "NSAudioCaptureUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Engine captures system audio to drive audio-reactive wallpapers."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Engine 需要捕获系统音频来驱动音频响应壁纸。"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.2"
+}

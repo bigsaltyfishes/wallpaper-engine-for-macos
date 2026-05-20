@@ -817,6 +817,23 @@
         }
       }
     },
+    "No Wallpapers" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Wallpapers"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有找到壁纸"
+          }
+        }
+      }
+    },
     "None" : {
       "localizations" : {
         "en" : {
