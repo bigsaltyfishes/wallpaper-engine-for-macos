@@ -16,6 +16,9 @@ pub struct SequenceForTest {
     pub expected: u64,
 }
 
+#[cfg(test)]
+pub struct FailNextRefreshDisplaysForTest;
+
 pub struct RefreshDisplays;
 
 pub struct RefreshDisplayDescriptors {

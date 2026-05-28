@@ -34,6 +34,8 @@ pub struct EngineActor {
     refresh_pending: bool,
     #[cfg(test)]
     pub test_sequence: u64,
+    #[cfg(test)]
+    fail_next_refresh_displays: bool,
 }
 
 #[derive(Clone)]
@@ -112,6 +114,8 @@ impl EngineActor {
             refresh_pending: false,
             #[cfg(test)]
             test_sequence: 0,
+            #[cfg(test)]
+            fail_next_refresh_displays: false,
         }
     }
 
@@ -579,6 +583,13 @@ impl Message<messages::RefreshDisplays> for EngineActor {
         _msg: messages::RefreshDisplays,
         _ctx: &mut Context<Self, Self::Reply>,
     ) -> Self::Reply {
+        #[cfg(test)]
+        if self.fail_next_refresh_displays {
+            self.fail_next_refresh_displays = false;
+            return Err(EngineError::Platform(
+                "test display refresh failure".to_string(),
+            ));
+        }
         self.refresh_displays_now()?;
         self.publish_snapshot();
         Ok(())
@@ -890,5 +901,19 @@ impl Message<SequenceForTest> for EngineActor {
         self.test_sequence += 1;
         assert_eq!(self.test_sequence, msg.expected);
         Ok(self.test_sequence)
+    }
+}
+
+#[cfg(test)]
+impl Message<messages::FailNextRefreshDisplaysForTest> for EngineActor {
+    type Reply = Result<(), EngineError>;
+
+    async fn handle(
+        &mut self,
+        _msg: messages::FailNextRefreshDisplaysForTest,
+        _ctx: &mut Context<Self, Self::Reply>,
+    ) -> Self::Reply {
+        self.fail_next_refresh_displays = true;
+        Ok(())
     }
 }
