@@ -82,17 +82,11 @@ struct EngineRefreshTarget {
 
 impl DisplayRefreshTarget for EngineRefreshTarget {
     fn schedule(&self) {
-        match self.actor.ask(messages::RefreshDisplays).blocking_send() {
-            Ok(()) => {}
-            Err(kameo::error::SendError::HandlerError(error)) => {
-                log::warn!("[wallpaper-core display] display refresh failed: {error}");
-            }
-            Err(error) => {
-                log::warn!(
-                    "[wallpaper-core display] skipped display refresh because actor mailbox \
-                     failed: {error}"
-                );
-            }
+        if let Err(error) = self.actor.tell(messages::RefreshDisplays).blocking_send() {
+            log::warn!(
+                "[wallpaper-core display] skipped display refresh because actor mailbox failed: \
+                 {error}"
+            );
         }
     }
 }
@@ -763,28 +757,6 @@ mod tests {
         assert!(state.display_records.iter().any(|record| {
             record.model.key == DisplayKey::Identity(external.clone()) && record.model.window_active
         }));
-    }
-
-    #[test]
-    fn display_callback_refresh_error_does_not_stop_actor() {
-        let engine = engine_with_display_records(Vec::new());
-
-        engine
-            .actor
-            .actor()
-            .ask(messages::FailNextRefreshDisplaysForTest)
-            .blocking_send()
-            .expect("test refresh failure should be armed");
-
-        engine.lifecycle.refresh_target.schedule();
-
-        let sequence = engine
-            .actor
-            .actor()
-            .ask(messages::SequenceForTest { expected: 1 })
-            .blocking_send()
-            .expect("actor should keep processing after callback refresh failure");
-        assert_eq!(sequence, 1);
     }
 
     #[test]

@@ -99,7 +99,6 @@ fn emit_static_link_flags(build_dir: &Path) {
         "c++",
         "vulkan",
         "lz4",
-        "freetype",
         "avformat",
         "avcodec",
         "avutil",
