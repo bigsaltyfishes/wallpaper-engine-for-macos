@@ -5,7 +5,7 @@ mod runtime;
 mod snapshot;
 mod state;
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use actor::{EngineActor, EngineActorHandle};
 pub use config::{DisplayConfig, DisplaySelector, WallpaperAssignment, WallpaperEngineConfig};
@@ -31,7 +31,7 @@ use crate::{
     },
     owe::backend::OweBackend,
     project::{ScalingMode, SceneDesc, SceneHandle, SceneResult, SerdeValudeExt},
-    window::{MouseButtons, NormalizedMousePosition},
+    window::{MouseButtonEdges, MouseButtonTracker, MouseButtons, NormalizedMousePosition},
 };
 
 /// Public snapshot of one display's engine-side state. Returned by
@@ -62,6 +62,9 @@ pub struct WallpaperEngine {
     backend: OweBackend,
     snapshots: Arc<EngineSnapshotPublisher>,
     audio_response_resampler: Arc<std::sync::Mutex<AudioResponseResampler>>,
+    mouse_buttons: Arc<Mutex<MouseButtonTracker>>,
+    #[allow(dead_code)]
+    mouse_event_monitor: Arc<Option<crate::window::MouseEventMonitor>>,
     #[allow(dead_code)]
     actor: EngineActorHandle,
     /// Owns callback registration and its target for the engine lifetime.
@@ -150,6 +153,8 @@ impl WallpaperEngine {
         let initial_snapshot = actor_state.snapshot();
         let snapshots = Arc::new(EngineSnapshotPublisher::new(initial_snapshot));
         let actor = EngineActorHandle::spawn(backend, actor_state, Arc::clone(&snapshots))?;
+        let mouse_buttons = Arc::new(Mutex::new(MouseButtonTracker::new()));
+        let mouse_event_monitor = Arc::new(Self::install_mouse_event_monitor(&mouse_buttons));
         let lifecycle = Arc::new(EngineLifecycle::new(&actor)?);
         let engine = Self {
             backend,
@@ -157,10 +162,36 @@ impl WallpaperEngine {
             audio_response_resampler: Arc::new(
                 std::sync::Mutex::new(AudioResponseResampler::new()),
             ),
+            mouse_buttons,
+            mouse_event_monitor,
             actor,
             lifecycle,
         };
         Ok(engine)
+    }
+
+    #[cfg(test)]
+    #[allow(clippy::single_call_fn)]
+    fn install_mouse_event_monitor(
+        mouse_buttons: &Arc<Mutex<MouseButtonTracker>>,
+    ) -> Option<crate::window::MouseEventMonitor> {
+        let _ = mouse_buttons;
+        None
+    }
+
+    #[cfg(not(test))]
+    #[allow(clippy::single_call_fn)]
+    fn install_mouse_event_monitor(
+        mouse_buttons: &Arc<Mutex<MouseButtonTracker>>,
+    ) -> Option<crate::window::MouseEventMonitor> {
+        let tracker = Arc::clone(mouse_buttons);
+        crate::window::run_on_main_thread(move || {
+            crate::window::MouseEventMonitor::new(move |state| {
+                if let Ok(mut tracker) = tracker.lock() {
+                    tracker.set_button(state.button, state.pressed);
+                }
+            })
+        })
     }
 
     /// Alias for [`WallpaperEngine::new`] retained for call sites that model an
@@ -476,11 +507,18 @@ impl WallpaperEngine {
     ///
     /// Returns an error if forwarding to the renderer fails.
     pub async fn poll_mouse_position(&self) -> Result<(), EngineError> {
-        self.poll_mouse_state(crate::window::run_on_main_thread(|| MousePollState {
-            point: NSEvent::mouseLocation(),
-            buttons: MouseButtons::from_mask(NSEvent::pressedMouseButtons() as u64),
-        }))
-        .await
+        let state = crate::window::run_on_main_thread(|| {
+            let point = NSEvent::mouseLocation();
+            let level_buttons = MouseButtons::from_mask(NSEvent::pressedMouseButtons() as u64);
+            let buttons = if let Ok(mut tracker) = self.mouse_buttons.lock() {
+                tracker.sync_down_mask(level_buttons.mask());
+                tracker.consume_edges()
+            } else {
+                MouseButtonEdges::from_level_state(level_buttons)
+            };
+            MousePollState { point, buttons }
+        });
+        self.poll_mouse_state(state).await
     }
 
     /// Overrides the scene render resolution.
@@ -613,14 +651,14 @@ impl WallpaperEngine {
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct MousePollState {
     point: NSPoint,
-    buttons: MouseButtons,
+    buttons: MouseButtonEdges,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct MouseDisplayUpdate {
     entered: bool,
     position: Option<NormalizedMousePosition>,
-    buttons: MouseButtons,
+    buttons: MouseButtonEdges,
 }
 
 #[allow(clippy::single_call_fn)]
@@ -629,7 +667,10 @@ fn mouse_update_for_display(state: MousePollState, display: &DisplayDesc) -> Mou
     MouseDisplayUpdate {
         entered: position.is_some(),
         position,
-        buttons: position.map_or_else(MouseButtons::default, |_| state.buttons),
+        buttons: position.map_or_else(
+            || MouseButtonEdges::from_level_state(MouseButtons::default()),
+            |_| state.buttons,
+        ),
     }
 }
 
@@ -720,6 +761,8 @@ mod tests {
             audio_response_resampler: Arc::new(
                 std::sync::Mutex::new(AudioResponseResampler::new()),
             ),
+            mouse_buttons: Arc::new(Mutex::new(MouseButtonTracker::new())),
+            mouse_event_monitor: Arc::new(None),
             actor,
             lifecycle,
         }
@@ -1680,7 +1723,7 @@ mod tests {
         let display = crate::DisplayDesc::new(7, 0, 0, 1920, 1080, 1.0);
         let state = MousePollState {
             point: NSPoint::new(1921.0, 540.0),
-            buttons: MouseButtons::default(),
+            buttons: MouseButtonEdges::from_level_state(MouseButtons::default()),
         };
 
         let update = mouse_update_for_display(state, &display);
@@ -1690,9 +1733,31 @@ mod tests {
             MouseDisplayUpdate {
                 entered: false,
                 position: None,
-                buttons: MouseButtons::default(),
+                buttons: MouseButtonEdges::from_level_state(MouseButtons::default()),
             }
         );
+    }
+
+    #[test]
+    fn mouse_update_for_display_preserves_tap_transitions_inside_display() {
+        let display = crate::DisplayDesc::new(7, 0, 0, 1920, 1080, 1.0);
+        let state = MousePollState {
+            point: NSPoint::new(960.0, 540.0),
+            buttons: MouseButtonEdges::from_masks(0, 1, 1),
+        };
+
+        let update = mouse_update_for_display(state, &display);
+        let states = update.buttons.states();
+
+        assert!(update.entered);
+        assert_eq!(
+            update.position,
+            Some(NormalizedMousePosition { x: 0.5, y: 0.5 })
+        );
+        assert_eq!(states[0].button, 0);
+        assert!(states[0].pressed);
+        assert_eq!(states[1].button, 0);
+        assert!(!states[1].pressed);
     }
 
     #[tokio::test(flavor = "current_thread")]

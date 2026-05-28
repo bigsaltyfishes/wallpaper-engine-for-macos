@@ -6,6 +6,8 @@ use objc2_app_kit::{
     NSApplication, NSBackingStoreType, NSColor, NSScreen, NSView, NSWindow,
     NSWindowAnimationBehavior, NSWindowCollectionBehavior, NSWindowStyleMask,
 };
+#[cfg(not(test))]
+use objc2_app_kit::{NSEvent, NSEventMask, NSEventType};
 use objc2_core_graphics::{CGWindowLevelForKey, CGWindowLevelKey};
 use objc2_foundation::{NSInteger, NSPoint, NSRect, NSSize, NSThread};
 use objc2_quartz_core::CAMetalLayer;
@@ -118,6 +120,225 @@ impl MouseButtons {
             })
             .collect()
     }
+
+    #[must_use]
+    pub(crate) fn mask(self) -> u64 {
+        self.mask
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct MouseButtonEdges {
+    down: MouseButtons,
+    pressed: MouseButtons,
+    released: MouseButtons,
+}
+
+impl MouseButtonEdges {
+    #[must_use]
+    pub(crate) fn from_level_state(buttons: MouseButtons) -> Self {
+        Self {
+            down: buttons,
+            pressed: buttons,
+            released: MouseButtons::default(),
+        }
+    }
+
+    #[allow(clippy::single_call_fn)]
+    #[must_use]
+    pub(crate) fn from_masks(down: u64, pressed: u64, released: u64) -> Self {
+        Self {
+            down: MouseButtons::from_mask(down),
+            pressed: MouseButtons::from_mask(pressed),
+            released: MouseButtons::from_mask(released),
+        }
+    }
+
+    #[cfg(test)]
+    #[must_use]
+    pub(crate) fn down(self) -> MouseButtons {
+        self.down
+    }
+
+    #[must_use]
+    pub(crate) fn states(self) -> Vec<MouseButtonState> {
+        let transitions = self.pressed.mask | self.released.mask;
+        if transitions == 0 {
+            return self.down.states();
+        }
+
+        (0..32)
+            .flat_map(|button| {
+                let mask = 1u64 << button;
+                let mut states = Vec::with_capacity(2);
+                if (self.pressed.mask & mask) != 0 {
+                    states.push(MouseButtonState {
+                        button,
+                        pressed: true,
+                    });
+                }
+                if (self.released.mask & mask) != 0 {
+                    states.push(MouseButtonState {
+                        button,
+                        pressed: false,
+                    });
+                }
+                if states.is_empty() {
+                    states.push(MouseButtonState {
+                        button,
+                        pressed: (self.down.mask & mask) != 0,
+                    });
+                }
+                states
+            })
+            .collect()
+    }
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct MouseButtonTracker {
+    down: u64,
+    pressed: u64,
+    released: u64,
+}
+
+impl MouseButtonTracker {
+    #[allow(clippy::single_call_fn)]
+    #[must_use]
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+
+    pub(crate) fn set_button(&mut self, button: u32, pressed: bool) {
+        if button > 31 {
+            return;
+        }
+        let mask = 1u64 << button;
+        if pressed {
+            if (self.down & mask) == 0 {
+                self.down |= mask;
+                self.pressed |= mask;
+            }
+            return;
+        }
+
+        if (self.down & mask) != 0 {
+            self.down &= !mask;
+            self.released |= mask;
+        }
+    }
+
+    pub(crate) fn sync_down_mask(&mut self, mask: u64) {
+        self.down = mask & u64::from(u32::MAX);
+    }
+
+    #[must_use]
+    pub(crate) fn consume_edges(&mut self) -> MouseButtonEdges {
+        let edges = MouseButtonEdges::from_masks(self.down, self.pressed, self.released);
+        self.pressed = 0;
+        self.released = 0;
+        edges
+    }
+}
+
+#[cfg(not(test))]
+pub(crate) struct MouseEventMonitor {
+    monitor: SendPtr,
+    #[allow(dead_code)]
+    block: block2::RcBlock<dyn Fn(std::ptr::NonNull<NSEvent>)>,
+}
+
+#[cfg(test)]
+pub(crate) struct MouseEventMonitor;
+
+#[cfg(not(test))]
+impl MouseEventMonitor {
+    #[allow(clippy::single_call_fn)]
+    pub(crate) fn new<F>(handler: F) -> Option<Self>
+    where
+        F: Fn(MouseButtonState) + 'static,
+    {
+        let block = block2::RcBlock::new(move |event: std::ptr::NonNull<NSEvent>| {
+            // SAFETY: AppKit invokes the monitor block with a valid NSEvent for
+            // the event mask supplied when registering the monitor.
+            let event = unsafe { event.as_ref() };
+            let Some(state) = mouse_button_state_from_event(event) else {
+                return;
+            };
+            handler(state);
+        });
+
+        let retained_monitor = NSEvent::addGlobalMonitorForEventsMatchingMask_handler(
+            mouse_button_event_mask(),
+            &block,
+        )?;
+        let monitor = SendPtr(Retained::as_ptr(&retained_monitor).cast_mut().cast());
+        std::mem::forget(retained_monitor);
+
+        Some(Self { monitor, block })
+    }
+}
+
+#[cfg(not(test))]
+impl Drop for MouseEventMonitor {
+    fn drop(&mut self) {
+        let monitor = self.monitor.0 as usize;
+        run_on_main_thread(move || unsafe {
+            let object = Retained::from_raw((monitor as *mut std::ffi::c_void).cast::<AnyObject>())
+                .expect("mouse event monitor token should not be null");
+            NSEvent::removeMonitor(&object);
+        });
+    }
+}
+
+// SAFETY: The monitor token is retained and only removed on the AppKit main
+// thread in Drop. The retained block must stay alive for AppKit callbacks, but
+// it is not invoked by Rust after construction.
+#[cfg(not(test))]
+unsafe impl Send for MouseEventMonitor {}
+// SAFETY: The wrapper stores Objective-C tokens opaquely and all Objective-C
+// interaction is dispatched to the main thread.
+#[cfg(not(test))]
+unsafe impl Sync for MouseEventMonitor {}
+
+#[cfg(not(test))]
+#[must_use]
+#[allow(clippy::single_call_fn)]
+fn mouse_button_event_mask() -> NSEventMask {
+    NSEventMask::LeftMouseDown
+        | NSEventMask::LeftMouseUp
+        | NSEventMask::RightMouseDown
+        | NSEventMask::RightMouseUp
+        | NSEventMask::OtherMouseDown
+        | NSEventMask::OtherMouseUp
+}
+
+#[cfg(not(test))]
+#[must_use]
+#[allow(clippy::single_call_fn)]
+fn mouse_button_state_from_event(event: &NSEvent) -> Option<MouseButtonState> {
+    let event_type = event.r#type();
+    let pressed = if event_type == NSEventType::LeftMouseDown
+        || event_type == NSEventType::RightMouseDown
+        || event_type == NSEventType::OtherMouseDown
+    {
+        true
+    } else if event_type == NSEventType::LeftMouseUp
+        || event_type == NSEventType::RightMouseUp
+        || event_type == NSEventType::OtherMouseUp
+    {
+        false
+    } else {
+        return None;
+    };
+
+    let button = match event_type {
+        NSEventType::LeftMouseDown | NSEventType::LeftMouseUp => 0,
+        NSEventType::RightMouseDown | NSEventType::RightMouseUp => 1,
+        _ => u32::try_from(event.buttonNumber()).ok()?,
+    };
+
+    Some(MouseButtonState { button, pressed })
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -446,6 +667,7 @@ impl WallpaperWindowBuilder {
 /// reference-counted and thread-safe at the ARC level. We only transport the
 /// pointer value across the dispatch boundary; actual dereferences happen
 /// exclusively on the main thread.
+#[derive(Clone, Copy)]
 struct SendPtr(*mut std::ffi::c_void);
 unsafe impl Send for SendPtr {}
 
@@ -689,7 +911,10 @@ unsafe impl Send for MainThread {}
 
 #[cfg(test)]
 mod tests {
-    use super::{MouseButtons, NormalizedMousePosition};
+    use super::{
+        MouseButtonEdges, MouseButtonState, MouseButtonTracker, MouseButtons,
+        NormalizedMousePosition,
+    };
 
     #[test]
     fn mouse_buttons_reports_current_state_for_all_owe_buttons() {
@@ -702,6 +927,56 @@ mod tests {
         assert!(!states[1].pressed);
         assert_eq!(states[2].button, 2);
         assert!(states[2].pressed);
+    }
+
+    #[test]
+    fn mouse_button_edges_preserve_press_and_release_in_one_poll() {
+        let states = MouseButtonEdges::from_masks(0, 1, 1).states();
+
+        assert_eq!(
+            &states[..2],
+            &[
+                MouseButtonState {
+                    button: 0,
+                    pressed: true,
+                },
+                MouseButtonState {
+                    button: 0,
+                    pressed: false,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn mouse_button_tracker_exposes_tap_edges_then_clears_them() {
+        let mut tracker = MouseButtonTracker::new();
+
+        tracker.set_button(0, true);
+        tracker.set_button(0, false);
+
+        let tap = tracker.consume_edges();
+        assert_eq!(tap.down().mask(), 0);
+        assert_eq!(
+            &tap.states()[..2],
+            &[
+                MouseButtonState {
+                    button: 0,
+                    pressed: true,
+                },
+                MouseButtonState {
+                    button: 0,
+                    pressed: false,
+                },
+            ]
+        );
+
+        let idle = tracker.consume_edges();
+        assert_eq!(idle.down().mask(), 0);
+        assert_eq!(
+            idle.states().iter().filter(|state| state.pressed).count(),
+            0
+        );
     }
 
     #[test]
