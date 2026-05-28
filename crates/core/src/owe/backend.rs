@@ -398,6 +398,58 @@ impl OweScene {
         })
     }
 
+    /// Sends normalized mouse coordinates to the renderer.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] if coordinates are non-finite, the scene is
+    /// closed, or OWE rejects the update.
+    pub fn set_mouse_position(&mut self, x: f64, y: f64) -> Result<(), EngineError> {
+        if !x.is_finite() || !y.is_finite() {
+            return Err(EngineError::InvalidInput(
+                "mouse coordinates must be finite".to_string(),
+            ));
+        }
+        let raw = self.raw_ptr()?;
+        call_status("owe_scene_wallpaper_mouse_input", || unsafe {
+            sys::owe_scene_wallpaper_mouse_input(raw.as_ptr(), x, y)
+        })
+    }
+
+    /// Sends one mouse button transition to the renderer.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] if the button is out of range, the scene is
+    /// closed, or OWE rejects the update.
+    pub fn set_mouse_button(&mut self, button: u32, pressed: bool) -> Result<(), EngineError> {
+        let button = i32::try_from(button).map_err(|_| {
+            EngineError::InvalidInput("mouse button must be in range 0..31".to_string())
+        })?;
+        if !(0..=31).contains(&button) {
+            return Err(EngineError::InvalidInput(
+                "mouse button must be in range 0..31".to_string(),
+            ));
+        }
+        let raw = self.raw_ptr()?;
+        call_status("owe_scene_wallpaper_mouse_button", || unsafe {
+            sys::owe_scene_wallpaper_mouse_button(raw.as_ptr(), button, pressed)
+        })
+    }
+
+    /// Sends mouse enter/leave state to the renderer.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] if the scene is closed or OWE rejects the
+    /// update.
+    pub fn set_mouse_entered(&mut self, entered: bool) -> Result<(), EngineError> {
+        let raw = self.raw_ptr()?;
+        call_status("owe_scene_wallpaper_mouse_enter", || unsafe {
+            sys::owe_scene_wallpaper_mouse_enter(raw.as_ptr(), entered)
+        })
+    }
+
     /// Enables or disables audio-response behavior.
     ///
     /// # Errors

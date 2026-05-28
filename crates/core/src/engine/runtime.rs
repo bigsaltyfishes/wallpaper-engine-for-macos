@@ -157,6 +157,18 @@ impl SceneRuntime {
         Ok(())
     }
 
+    pub fn set_mouse_position(&mut self, x: f64, y: f64) -> Result<(), EngineError> {
+        self.renderer.set_mouse_position(x, y)
+    }
+
+    pub fn set_mouse_button(&mut self, button: u32, pressed: bool) -> Result<(), EngineError> {
+        self.renderer.set_mouse_button(button, pressed)
+    }
+
+    pub fn set_mouse_entered(&mut self, entered: bool) -> Result<(), EngineError> {
+        self.renderer.set_mouse_entered(entered)
+    }
+
     pub fn set_render_resolution(
         &mut self,
         backend: OweBackend,

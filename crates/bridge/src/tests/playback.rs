@@ -216,6 +216,36 @@ impl EngineFacade for FailingPlaybackEngine {
         async move { Ok::<(), EngineError>(()) }.boxed()
     }
 
+    fn poll_mouse_position(&self) -> BoxFuture<'static, Result<(), EngineError>> {
+        async move { Ok::<(), EngineError>(()) }.boxed()
+    }
+
+    fn set_mouse_position(
+        &self,
+        _handle: SceneHandle,
+        _x: f64,
+        _y: f64,
+    ) -> BoxFuture<'static, Result<(), EngineError>> {
+        async move { Ok::<(), EngineError>(()) }.boxed()
+    }
+
+    fn set_mouse_button(
+        &self,
+        _handle: SceneHandle,
+        _button: u32,
+        _pressed: bool,
+    ) -> BoxFuture<'static, Result<(), EngineError>> {
+        async move { Ok::<(), EngineError>(()) }.boxed()
+    }
+
+    fn set_mouse_entered(
+        &self,
+        _handle: SceneHandle,
+        _entered: bool,
+    ) -> BoxFuture<'static, Result<(), EngineError>> {
+        async move { Ok::<(), EngineError>(()) }.boxed()
+    }
+
     fn create_window_for_display(
         &self,
         _selector: DisplaySelector,
@@ -355,6 +385,36 @@ impl EngineFacade for ShutdownEngine {
         &self,
         _handle: SceneHandle,
         _fps: u32,
+    ) -> BoxFuture<'static, Result<(), EngineError>> {
+        async move { Ok::<(), EngineError>(()) }.boxed()
+    }
+
+    fn poll_mouse_position(&self) -> BoxFuture<'static, Result<(), EngineError>> {
+        async move { Ok::<(), EngineError>(()) }.boxed()
+    }
+
+    fn set_mouse_position(
+        &self,
+        _handle: SceneHandle,
+        _x: f64,
+        _y: f64,
+    ) -> BoxFuture<'static, Result<(), EngineError>> {
+        async move { Ok::<(), EngineError>(()) }.boxed()
+    }
+
+    fn set_mouse_button(
+        &self,
+        _handle: SceneHandle,
+        _button: u32,
+        _pressed: bool,
+    ) -> BoxFuture<'static, Result<(), EngineError>> {
+        async move { Ok::<(), EngineError>(()) }.boxed()
+    }
+
+    fn set_mouse_entered(
+        &self,
+        _handle: SceneHandle,
+        _entered: bool,
     ) -> BoxFuture<'static, Result<(), EngineError>> {
         async move { Ok::<(), EngineError>(()) }.boxed()
     }

@@ -1,7 +1,13 @@
 mod error;
 mod types;
 
-use std::{pin::Pin, sync::Arc};
+use std::{
+    pin::Pin,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 pub use error::{BridgeError, BridgeErrorKind};
 use futures_util::Future;
@@ -36,12 +42,12 @@ use crate::{
             ApplyWallpaperOptions, Bootstrap, CancelWallpaperOptions, ClearShaderCache,
             EditProperty, EjectWallpaperFromDisplay, GetAllSnapshots, GetAppSnapshot,
             GetLibrarySnapshot, GetMonitorInformationSnapshot, GetSettingsSnapshot,
-            GetWallpaperOptionsSnapshot, RefreshDisplays, RefreshLibrary, RestorePropertyDefault,
-            SelectWallpaper, SetAudioResponseEnabled, SetDisplayConfigEnabled, SetDisplayEnabled,
-            SetDisplayMode, SetFilter, SetGlobalPlayback, SetLaunchAtLogin, SetMirrorMuted,
-            SetMirrorScalingFactor, SetMirrorScalingMode, SetMirrorTarget, SetMirrorTargetFps,
-            SetMirrorVolume, SetMuted, SetScalingFactor, SetScalingMode, SetTargetFps, SetVolume,
-            Shutdown,
+            GetWallpaperOptionsSnapshot, PollMousePosition, RefreshDisplays, RefreshLibrary,
+            RestorePropertyDefault, SelectWallpaper, SetAudioResponseEnabled,
+            SetDisplayConfigEnabled, SetDisplayEnabled, SetDisplayMode, SetFilter,
+            SetGlobalPlayback, SetLaunchAtLogin, SetMirrorMuted, SetMirrorScalingFactor,
+            SetMirrorScalingMode, SetMirrorTarget, SetMirrorTargetFps, SetMirrorVolume, SetMuted,
+            SetScalingFactor, SetScalingMode, SetTargetFps, SetVolume, Shutdown,
         },
         state::BridgeActorState,
     },
@@ -66,6 +72,7 @@ pub struct BridgeBuilder<E: EngineFacade> {
     config_store: Option<ConfigStore>,
     launch_at_login: LaunchAtLoginController,
     paths: BridgePaths,
+    mouse_polling_enabled: bool,
 }
 
 impl<E: EngineFacade> BridgeBuilder<E> {
@@ -77,6 +84,7 @@ impl<E: EngineFacade> BridgeBuilder<E> {
             config_store: None,
             launch_at_login: LaunchAtLoginController::default(),
             paths: BridgePaths::new(),
+            mouse_polling_enabled: true,
         }
     }
 
@@ -102,6 +110,12 @@ impl<E: EngineFacade> BridgeBuilder<E> {
         self
     }
 
+    #[cfg(test)]
+    pub fn with_mouse_polling_enabled(mut self, enabled: bool) -> Self {
+        self.mouse_polling_enabled = enabled;
+        self
+    }
+
     pub fn build(self) -> Result<WallpaperBridge, BridgeError> {
         let loaded_store = if let Some(store) = &self.config_store {
             Some(store.load()?)
@@ -117,22 +131,71 @@ impl<E: EngineFacade> BridgeBuilder<E> {
             }
         });
 
+        let actor = BridgeActorHandle::spawn(
+            state,
+            ArcEngineFacade::new(self.engine),
+            self.config_store.clone(),
+            self.launch_at_login,
+            self.paths,
+        )?;
+        let mouse_poller = if self.mouse_polling_enabled {
+            Some(MousePoller::spawn(actor.clone()))
+        } else {
+            None
+        };
+
         Ok(WallpaperBridge {
-            actor: BridgeActorHandle::spawn(
-                state,
-                ArcEngineFacade::new(self.engine),
-                self.config_store.clone(),
-                self.launch_at_login,
-                self.paths,
-            )?,
+            actor,
+            mouse_poller,
             _config_store: self.config_store,
         })
+    }
+}
+
+struct MousePoller {
+    stop: Arc<AtomicBool>,
+    worker: Option<std::thread::JoinHandle<()>>,
+}
+
+impl MousePoller {
+    const INTERVAL: std::time::Duration = std::time::Duration::from_millis(16);
+
+    #[allow(clippy::single_call_fn)]
+    fn spawn(actor: BridgeActorHandle<ArcEngineFacade>) -> Self {
+        let stop = Arc::new(AtomicBool::new(false));
+        let worker_stop = Arc::clone(&stop);
+        let worker = std::thread::Builder::new()
+            .name("wallpaper-bridge-mouse-poller".to_string())
+            .spawn(move || {
+                while !worker_stop.load(Ordering::Relaxed) {
+                    let poll_result: Result<(), BridgeError> =
+                        actor.blocking_ask(PollMousePosition);
+                    if let Err(error) = poll_result {
+                        log::debug!("mouse poll skipped: {error}");
+                    }
+                    std::thread::sleep(Self::INTERVAL);
+                }
+            })
+            .ok();
+
+        Self { stop, worker }
+    }
+}
+
+impl Drop for MousePoller {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
     }
 }
 
 #[derive(uniffi::Object)]
 pub struct WallpaperBridge {
     actor: BridgeActorHandle<ArcEngineFacade>,
+    #[allow(dead_code)]
+    mouse_poller: Option<MousePoller>,
     _config_store: Option<ConfigStore>,
 }
 
@@ -232,6 +295,38 @@ impl EngineFacade for ArcEngineFacade {
         fps: u32,
     ) -> Pin<Box<dyn Future<Output = Result<(), wallpaper_core::EngineError>> + Send>> {
         self.0.set_fps(handle, fps)
+    }
+
+    fn poll_mouse_position(
+        &self,
+    ) -> Pin<Box<dyn Future<Output = Result<(), wallpaper_core::EngineError>> + Send>> {
+        self.0.poll_mouse_position()
+    }
+
+    fn set_mouse_position(
+        &self,
+        handle: SceneHandle,
+        x: f64,
+        y: f64,
+    ) -> Pin<Box<dyn Future<Output = Result<(), wallpaper_core::EngineError>> + Send>> {
+        self.0.set_mouse_position(handle, x, y)
+    }
+
+    fn set_mouse_button(
+        &self,
+        handle: SceneHandle,
+        button: u32,
+        pressed: bool,
+    ) -> Pin<Box<dyn Future<Output = Result<(), wallpaper_core::EngineError>> + Send>> {
+        self.0.set_mouse_button(handle, button, pressed)
+    }
+
+    fn set_mouse_entered(
+        &self,
+        handle: SceneHandle,
+        entered: bool,
+    ) -> Pin<Box<dyn Future<Output = Result<(), wallpaper_core::EngineError>> + Send>> {
+        self.0.set_mouse_entered(handle, entered)
     }
 
     fn create_window_for_display(
@@ -394,6 +489,14 @@ impl WallpaperBridge {
     /// Returns an error when display refresh fails.
     pub async fn refresh_displays(&self) -> Result<BridgeSnapshotBundle, BridgeError> {
         self.actor.ask(RefreshDisplays).await
+    }
+
+    /// # Errors
+    ///
+    /// Returns an error when host pointer state cannot be forwarded to active
+    /// wallpaper scenes.
+    pub async fn poll_mouse_position(&self) -> Result<(), BridgeError> {
+        self.actor.ask(PollMousePosition).await
     }
 
     /// # Errors

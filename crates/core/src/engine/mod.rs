@@ -9,6 +9,8 @@ use std::sync::Arc;
 
 use actor::{EngineActor, EngineActorHandle};
 pub use config::{DisplayConfig, DisplaySelector, WallpaperAssignment, WallpaperEngineConfig};
+use objc2_app_kit::NSEvent;
+use objc2_foundation::NSPoint;
 use serde_json::Value;
 pub use snapshot::EngineSnapshotPublisher;
 
@@ -29,6 +31,7 @@ use crate::{
     },
     owe::backend::OweBackend,
     project::{ScalingMode, SceneDesc, SceneHandle, SceneResult, SerdeValudeExt},
+    window::{MouseButtons, NormalizedMousePosition},
 };
 
 /// Public snapshot of one display's engine-side state. Returned by
@@ -79,11 +82,17 @@ struct EngineRefreshTarget {
 
 impl DisplayRefreshTarget for EngineRefreshTarget {
     fn schedule(&self) {
-        if let Err(error) = self.actor.tell(messages::RefreshDisplays).blocking_send() {
-            log::warn!(
-                "[wallpaper-core display] skipped display refresh because actor mailbox failed: \
-                 {error}"
-            );
+        match self.actor.ask(messages::RefreshDisplays).blocking_send() {
+            Ok(()) => {}
+            Err(kameo::error::SendError::HandlerError(error)) => {
+                log::warn!("[wallpaper-core display] display refresh failed: {error}");
+            }
+            Err(error) => {
+                log::warn!(
+                    "[wallpaper-core display] skipped display refresh because actor mailbox \
+                     failed: {error}"
+                );
+            }
         }
     }
 }
@@ -393,6 +402,87 @@ impl WallpaperEngine {
         self.ask_actor(messages::SetAllPaused { paused }).await
     }
 
+    /// Sends normalized mouse coordinates to one open scene.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if coordinates are non-finite, actor communication
+    /// fails, or the renderer rejects the update.
+    pub async fn set_mouse_position(
+        &self,
+        handle: SceneHandle,
+        x: f64,
+        y: f64,
+    ) -> Result<(), EngineError> {
+        if !x.is_finite() || !y.is_finite() {
+            return Err(EngineError::InvalidInput(
+                "mouse coordinates must be finite".to_string(),
+            ));
+        }
+
+        self.ask_actor(messages::SetMousePosition { handle, x, y })
+            .await
+    }
+
+    /// Sends a mouse button state transition to one open scene.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the button is out of range, actor communication
+    /// fails, or the renderer rejects the update.
+    pub async fn set_mouse_button(
+        &self,
+        handle: SceneHandle,
+        button: u32,
+        pressed: bool,
+    ) -> Result<(), EngineError> {
+        if button > 31 {
+            return Err(EngineError::InvalidInput(
+                "mouse button must be in range 0..31".to_string(),
+            ));
+        }
+
+        self.ask_actor(messages::SetMouseButton {
+            handle,
+            button,
+            pressed,
+        })
+        .await
+    }
+
+    /// Sends mouse enter/leave state to one open scene.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if actor communication fails or the renderer rejects
+    /// the update.
+    pub async fn set_mouse_entered(
+        &self,
+        handle: SceneHandle,
+        entered: bool,
+    ) -> Result<(), EngineError> {
+        self.ask_actor(messages::SetMouseEntered { handle, entered })
+            .await
+    }
+
+    /// Polls the global macOS mouse location and forwards normalized
+    /// coordinates to every active scene under that point.
+    ///
+    /// Wallpaper windows ignore mouse events so they do not steal desktop
+    /// clicks. Polling global coordinates keeps mouse-tracking wallpapers
+    /// updated without changing the window hit-testing behavior.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if forwarding to the renderer fails.
+    pub async fn poll_mouse_position(&self) -> Result<(), EngineError> {
+        self.poll_mouse_state(crate::window::run_on_main_thread(|| MousePollState {
+            point: NSEvent::mouseLocation(),
+            buttons: MouseButtons::from_mask(NSEvent::pressedMouseButtons() as u64),
+        }))
+        .await
+    }
+
     /// Overrides the scene render resolution.
     ///
     /// The dimensions must be non-zero. Use the scene/display default instead
@@ -499,6 +589,76 @@ impl WallpaperEngine {
         self.ask_actor(messages::ResetPropertyOverride { handle })
             .await
     }
+
+    async fn poll_mouse_state(&self, state: MousePollState) -> Result<(), EngineError> {
+        for entry in self.display_snapshot() {
+            let Some(handle) = entry.handle else {
+                continue;
+            };
+            let update = mouse_update_for_display(state, &entry.desc);
+            self.set_mouse_entered(handle, update.entered).await?;
+            if let Some(position) = update.position {
+                self.set_mouse_position(handle, position.x, position.y)
+                    .await?;
+            }
+            for button in update.buttons.states() {
+                self.set_mouse_button(handle, button.button, button.pressed)
+                    .await?;
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct MousePollState {
+    point: NSPoint,
+    buttons: MouseButtons,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct MouseDisplayUpdate {
+    entered: bool,
+    position: Option<NormalizedMousePosition>,
+    buttons: MouseButtons,
+}
+
+#[allow(clippy::single_call_fn)]
+fn mouse_update_for_display(state: MousePollState, display: &DisplayDesc) -> MouseDisplayUpdate {
+    let position = normalized_mouse_for_display(state.point, display);
+    MouseDisplayUpdate {
+        entered: position.is_some(),
+        position,
+        buttons: position.map_or_else(MouseButtons::default, |_| state.buttons),
+    }
+}
+
+#[allow(clippy::cast_possible_truncation)]
+#[allow(clippy::single_call_fn)]
+fn normalized_mouse_for_display(
+    point: NSPoint,
+    display: &DisplayDesc,
+) -> Option<NormalizedMousePosition> {
+    let scale_factor = display.scale_factor.max(f64::MIN_POSITIVE);
+    let display_x = f64::from(display.x);
+    let display_y = f64::from(display.y);
+    let width = f64::from(display.width) / scale_factor;
+    let height = f64::from(display.height) / scale_factor;
+
+    if point.x < display_x
+        || point.y < display_y
+        || point.x >= display_x + width
+        || point.y >= display_y + height
+    {
+        return None;
+    }
+
+    NormalizedMousePosition::from_window_point(
+        point.x - display_x,
+        point.y - display_y,
+        width,
+        height,
+    )
 }
 
 impl<M> From<kameo::error::SendError<M, EngineError>> for EngineError {
@@ -603,6 +763,28 @@ mod tests {
         assert!(state.display_records.iter().any(|record| {
             record.model.key == DisplayKey::Identity(external.clone()) && record.model.window_active
         }));
+    }
+
+    #[test]
+    fn display_callback_refresh_error_does_not_stop_actor() {
+        let engine = engine_with_display_records(Vec::new());
+
+        engine
+            .actor
+            .actor()
+            .ask(messages::FailNextRefreshDisplaysForTest)
+            .blocking_send()
+            .expect("test refresh failure should be armed");
+
+        engine.lifecycle.refresh_target.schedule();
+
+        let sequence = engine
+            .actor
+            .actor()
+            .ask(messages::SequenceForTest { expected: 1 })
+            .blocking_send()
+            .expect("actor should keep processing after callback refresh failure");
+        assert_eq!(sequence, 1);
     }
 
     #[test]
@@ -1453,6 +1635,63 @@ mod tests {
             snapshot
                 .iter()
                 .all(|entry| entry.desc.display_id == 1 || entry.desc.display_id == 2)
+        );
+    }
+
+    #[test]
+    fn normalized_mouse_for_display_maps_appkit_global_point_to_owe_coordinates() {
+        let display = crate::DisplayDesc::new(7, 1920, 120, 3840, 2160, 2.0);
+        let lower_point = NSPoint::new(2160.0, 390.0);
+
+        let lower_position = normalized_mouse_for_display(lower_point, &display)
+            .expect("point should be inside display");
+
+        assert_eq!(
+            lower_position,
+            NormalizedMousePosition { x: 0.125, y: 0.75 }
+        );
+
+        let higher_point = NSPoint::new(2160.0, 930.0);
+        let higher_position = normalized_mouse_for_display(higher_point, &display)
+            .expect("point should be inside display");
+
+        assert_eq!(
+            higher_position,
+            NormalizedMousePosition { x: 0.125, y: 0.25 }
+        );
+    }
+
+    #[test]
+    fn normalized_mouse_for_display_rejects_points_outside_display() {
+        let display = crate::DisplayDesc::new(7, 1920, 120, 3840, 2160, 2.0);
+
+        assert_eq!(
+            normalized_mouse_for_display(NSPoint::new(1919.0, 390.0), &display),
+            None
+        );
+        assert_eq!(
+            normalized_mouse_for_display(NSPoint::new(2160.0, 1200.0), &display),
+            None
+        );
+    }
+
+    #[test]
+    fn mouse_update_for_display_releases_buttons_after_cursor_leaves_display() {
+        let display = crate::DisplayDesc::new(7, 0, 0, 1920, 1080, 1.0);
+        let state = MousePollState {
+            point: NSPoint::new(1921.0, 540.0),
+            buttons: MouseButtons::default(),
+        };
+
+        let update = mouse_update_for_display(state, &display);
+
+        assert_eq!(
+            update,
+            MouseDisplayUpdate {
+                entered: false,
+                position: None,
+                buttons: MouseButtons::default(),
+            }
         );
     }
 

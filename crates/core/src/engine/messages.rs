@@ -16,6 +16,9 @@ pub struct SequenceForTest {
     pub expected: u64,
 }
 
+#[cfg(test)]
+pub struct FailNextRefreshDisplaysForTest;
+
 pub struct RefreshDisplays;
 
 pub struct RefreshDisplayDescriptors {
@@ -62,6 +65,23 @@ pub struct SetPaused {
 
 pub struct SetAllPaused {
     pub paused: bool,
+}
+
+pub struct SetMousePosition {
+    pub handle: SceneHandle,
+    pub x: f64,
+    pub y: f64,
+}
+
+pub struct SetMouseButton {
+    pub handle: SceneHandle,
+    pub button: u32,
+    pub pressed: bool,
+}
+
+pub struct SetMouseEntered {
+    pub handle: SceneHandle,
+    pub entered: bool,
 }
 
 pub struct SetRenderResolution {

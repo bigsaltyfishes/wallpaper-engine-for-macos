@@ -333,6 +333,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             rebuildMenu()
         }
     }
+
 }
 
 private struct BridgeUnavailableView: View {

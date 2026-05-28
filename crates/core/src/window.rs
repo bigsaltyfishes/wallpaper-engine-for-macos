@@ -91,6 +91,59 @@ pub struct WallpaperWindow {
     handle: Option<WindowHandle>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct MouseButtonState {
+    pub button: u32,
+    pub pressed: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct MouseButtons {
+    mask: u64,
+}
+
+impl MouseButtons {
+    #[must_use]
+    #[allow(clippy::single_call_fn)]
+    pub(crate) fn from_mask(mask: u64) -> Self {
+        Self { mask }
+    }
+
+    #[must_use]
+    pub(crate) fn states(self) -> Vec<MouseButtonState> {
+        (0..32)
+            .map(|button| MouseButtonState {
+                button,
+                pressed: (self.mask & (1u64 << button)) != 0,
+            })
+            .collect()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NormalizedMousePosition {
+    pub x: f64,
+    pub y: f64,
+}
+
+impl NormalizedMousePosition {
+    #[must_use]
+    #[allow(clippy::single_call_fn)]
+    pub fn from_window_point(x: f64, y: f64, width: f64, height: f64) -> Option<Self> {
+        if !x.is_finite() || !y.is_finite() || !width.is_finite() || !height.is_finite() {
+            return None;
+        }
+        if width <= 0.0 || height <= 0.0 {
+            return None;
+        }
+
+        Some(Self {
+            x: (x / width).clamp(0.0, 1.0),
+            y: (1.0 - (y / height)).clamp(0.0, 1.0),
+        })
+    }
+}
+
 impl WallpaperWindow {
     /// Starts building a wallpaper window for `display`.
     #[must_use]
@@ -620,7 +673,58 @@ impl MainThread {
     }
 }
 
+#[allow(clippy::single_call_fn)]
+pub(crate) fn run_on_main_thread<F, R>(body: F) -> R
+where
+    F: FnOnce() -> R + Send,
+    R: Send,
+{
+    MainThread::dispatch(body)
+}
+
 // SAFETY: This is an owned Objective-C pointer token, not a native facade. It
 // may move between Rust threads, but retains, releases, and Objective-C message
 // sends are only performed by the main-thread window path above.
 unsafe impl Send for MainThread {}
+
+#[cfg(test)]
+mod tests {
+    use super::{MouseButtons, NormalizedMousePosition};
+
+    #[test]
+    fn mouse_buttons_reports_current_state_for_all_owe_buttons() {
+        let states = MouseButtons::from_mask(0b101).states();
+
+        assert_eq!(states.len(), 32);
+        assert_eq!(states[0].button, 0);
+        assert!(states[0].pressed);
+        assert_eq!(states[1].button, 1);
+        assert!(!states[1].pressed);
+        assert_eq!(states[2].button, 2);
+        assert!(states[2].pressed);
+    }
+
+    #[test]
+    fn normalized_mouse_position_converts_appkit_points_to_owe_coordinates() {
+        let position = NormalizedMousePosition::from_window_point(480.0, 270.0, 1920.0, 1080.0)
+            .expect("valid point should normalize");
+
+        assert_eq!(position, NormalizedMousePosition { x: 0.25, y: 0.75 });
+    }
+
+    #[test]
+    fn normalized_mouse_position_clamps_and_rejects_invalid_geometry() {
+        assert_eq!(
+            NormalizedMousePosition::from_window_point(-10.0, 1200.0, 1920.0, 1080.0),
+            Some(NormalizedMousePosition { x: 0.0, y: 0.0 })
+        );
+        assert_eq!(
+            NormalizedMousePosition::from_window_point(f64::NAN, 0.0, 1920.0, 1080.0),
+            None
+        );
+        assert_eq!(
+            NormalizedMousePosition::from_window_point(0.0, 0.0, 0.0, 1080.0),
+            None
+        );
+    }
+}

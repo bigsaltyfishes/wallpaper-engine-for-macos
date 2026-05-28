@@ -69,6 +69,8 @@ pub struct RefreshLibrary;
 
 pub struct RefreshDisplays;
 
+pub struct PollMousePosition;
+
 pub struct SetFilter {
     pub kind: BridgeWallpaperKind,
     pub enabled: bool,
@@ -225,6 +227,7 @@ pub type TestMutationReply = Result<(), BridgeError>;
 pub type SelectWallpaperReply = AllSnapshotsReply;
 pub type RefreshLibraryReply = AllSnapshotsReply;
 pub type RefreshDisplaysReply = AllSnapshotsReply;
+pub type PollMousePositionReply = Result<(), BridgeError>;
 pub type SetFilterReply = AllSnapshotsReply;
 pub type DisplayMutationReply = Result<BridgeDisplayMutationBundle, crate::api::BridgeError>;
 pub type SetDisplayEnabledReply = DisplayMutationReply;

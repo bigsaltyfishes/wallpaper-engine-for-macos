@@ -8,7 +8,7 @@ use kameo::{
     actor::{ActorRef, Spawn},
     error::SendError,
     message::{Context, Message},
-    reply::DelegatedReply,
+    reply::{DelegatedReply, Reply},
 };
 use wallpaper_core::{
     DisplayIdentity, DisplaySelector, DisplaySnapshotEntry, WallpaperAssignment,
@@ -24,11 +24,11 @@ use crate::{
             EditProperty, EjectWallpaperFromDisplay, GetAllSnapshots, GetAppSnapshot,
             GetLibrarySnapshot, GetMonitorInformationSnapshot, GetSettingsSnapshot,
             GetWallpaperOptionsSnapshot, InjectDisplayForTest, InjectSceneProjectForTest,
-            InjectSceneWallpaperConfigForTest, InjectWallpaperForTest, ReconcileFailed,
-            RefreshDisplays, RefreshLibrary, ReplaceLibraryForTest, ReplaceWallpaperConfigForTest,
-            RestorePropertyDefault, SelectWallpaper, SetAudioResponseEnabled,
-            SetDisplayConfigEnabled, SetDisplayEnabled, SetDisplayMode, SetFilter,
-            SetGlobalPlayback, SetLaunchAtLogin, SetMirrorMuted, SetMirrorScalingFactor,
+            InjectSceneWallpaperConfigForTest, InjectWallpaperForTest, PollMousePosition,
+            ReconcileFailed, RefreshDisplays, RefreshLibrary, ReplaceLibraryForTest,
+            ReplaceWallpaperConfigForTest, RestorePropertyDefault, SelectWallpaper,
+            SetAudioResponseEnabled, SetDisplayConfigEnabled, SetDisplayEnabled, SetDisplayMode,
+            SetFilter, SetGlobalPlayback, SetLaunchAtLogin, SetMirrorMuted, SetMirrorScalingFactor,
             SetMirrorScalingMode, SetMirrorTarget, SetMirrorTargetFps, SetMirrorVolume, SetMuted,
             SetScalingFactor, SetScalingMode, SetTargetFps, SetVolume, Shutdown,
         },
@@ -150,6 +150,19 @@ impl<E: EngineFacade> BridgeActorHandle<E> {
         T: Send + 'static,
     {
         self.actor.ask(message).await.map_err(map_send_error)
+    }
+
+    pub fn blocking_ask<M, T>(&self, message: M) -> Result<T, BridgeError>
+    where
+        BridgeActor<E>: Message<M>,
+        <BridgeActor<E> as Message<M>>::Reply: Reply<Ok = T, Error = BridgeError>,
+        M: Send + 'static,
+        T: Send + 'static,
+    {
+        self.actor
+            .ask(message)
+            .blocking_send()
+            .map_err(map_send_error)
     }
 }
 
@@ -1141,6 +1154,21 @@ impl<E: EngineFacade + Clone> Message<GetSettingsSnapshot> for BridgeActor<E> {
         Ok(self
             .state
             .settings(&displays, self.launch_at_login.status(), &self.paths))
+    }
+}
+
+impl<E: EngineFacade + Clone> Message<PollMousePosition> for BridgeActor<E> {
+    type Reply = messages::PollMousePositionReply;
+
+    async fn handle(
+        &mut self,
+        _msg: PollMousePosition,
+        _ctx: &mut Context<Self, Self::Reply>,
+    ) -> Self::Reply {
+        self.engine
+            .poll_mouse_position()
+            .await
+            .map_err(|error| BridgeError::engine(error.to_string()))
     }
 }
 

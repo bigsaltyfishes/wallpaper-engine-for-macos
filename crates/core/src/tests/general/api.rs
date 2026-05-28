@@ -70,6 +70,9 @@ pub fn case_rust_api_boundary() {
         assert_async_result(engine.set_scaling_factor(handle, 1.25));
         assert_async_result(engine.set_fps(handle, 60));
         assert_async_result(engine.set_render_resolution(handle, 1920, 1080));
+        assert_async_result(engine.set_mouse_position(handle, 0.25, 0.75));
+        assert_async_result(engine.set_mouse_button(handle, 0, true));
+        assert_async_result(engine.set_mouse_entered(handle, true));
         assert_async_result(engine.set_audio_response_enabled(handle, true));
         assert_async_result(engine.set_audio_volume(handle, audio_volume));
         assert_async_result(engine.set_audio_muted(handle, true));

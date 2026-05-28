@@ -87,6 +87,75 @@ async fn wallpaper_options_preserves_invalid_input_errors() {
 }
 
 #[tokio::test]
+async fn poll_mouse_position_forwards_to_engine_facade() {
+    let engine = FakeEngineFacade::default();
+    let bridge = BridgeBuilder::new(engine.clone())
+        .with_state(BridgeActorState::default())
+        .with_mouse_polling_enabled(false)
+        .build()
+        .expect("bridge should build");
+
+    bridge
+        .poll_mouse_position()
+        .await
+        .expect("mouse polling should forward to engine");
+
+    assert_eq!(engine.mouse_poll_calls(), vec![()]);
+}
+
+#[test]
+fn bridge_owns_mouse_polling_without_swift_timer() {
+    let engine = FakeEngineFacade::default();
+    let bridge = BridgeBuilder::new(engine.clone())
+        .with_state(BridgeActorState::default())
+        .build()
+        .expect("bridge should build");
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(250);
+    while engine.mouse_poll_calls().is_empty() && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(16));
+    }
+
+    assert!(!engine.mouse_poll_calls().is_empty());
+    drop(bridge);
+}
+
+#[test]
+fn bridge_mouse_polling_waits_for_stalled_engine_poll() {
+    let engine = FakeEngineFacade::default();
+    let blocked_poll = engine.block_next_mouse_poll();
+    let bridge = BridgeBuilder::new(engine.clone())
+        .with_state(BridgeActorState::default())
+        .build()
+        .expect("bridge should build");
+
+    assert!(
+        blocked_poll.wait_until_blocked(std::time::Duration::from_secs(2)),
+        "first mouse poll should reach the engine"
+    );
+
+    std::thread::sleep(std::time::Duration::from_millis(80));
+    assert_eq!(
+        engine.mouse_poll_calls().len(),
+        1,
+        "poller must not enqueue additional polls while one engine poll is in flight"
+    );
+
+    let next_poll = engine.block_next_mouse_poll();
+    blocked_poll.release();
+    let queued_poll_reached_engine =
+        next_poll.wait_until_blocked(std::time::Duration::from_millis(8));
+    if queued_poll_reached_engine {
+        next_poll.release();
+    }
+    assert!(
+        !queued_poll_reached_engine,
+        "poller must not have queued a backlog while the first poll was stalled"
+    );
+    drop(bridge);
+}
+
+#[tokio::test]
 async fn settings_snapshot_uses_stable_identity_mirror_target() {
     let engine = FakeEngineFacade::default();
     engine.set_snapshot(vec![

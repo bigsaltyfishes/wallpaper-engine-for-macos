@@ -39,6 +39,11 @@ pub trait EngineFacade: Send + Sync + 'static {
     fn set_scaling_mode(&self, handle: SceneHandle, mode: ScalingMode) -> EngineFuture<()>;
     fn set_scaling_factor(&self, handle: SceneHandle, factor: f64) -> EngineFuture<()>;
     fn set_fps(&self, handle: SceneHandle, fps: u32) -> EngineFuture<()>;
+    fn poll_mouse_position(&self) -> EngineFuture<()>;
+    fn set_mouse_position(&self, handle: SceneHandle, x: f64, y: f64) -> EngineFuture<()>;
+    fn set_mouse_button(&self, handle: SceneHandle, button: u32, pressed: bool)
+    -> EngineFuture<()>;
+    fn set_mouse_entered(&self, handle: SceneHandle, entered: bool) -> EngineFuture<()>;
     fn create_window_for_display(
         &self,
         selector: DisplaySelector,
@@ -129,6 +134,31 @@ impl EngineFacade for RealEngineFacade {
     fn set_fps(&self, handle: SceneHandle, fps: u32) -> EngineFuture<()> {
         let engine = self.engine.clone();
         async move { engine.set_fps(handle, fps).await }.boxed()
+    }
+
+    fn poll_mouse_position(&self) -> EngineFuture<()> {
+        let engine = self.engine.clone();
+        async move { engine.poll_mouse_position().await }.boxed()
+    }
+
+    fn set_mouse_position(&self, handle: SceneHandle, x: f64, y: f64) -> EngineFuture<()> {
+        let engine = self.engine.clone();
+        async move { engine.set_mouse_position(handle, x, y).await }.boxed()
+    }
+
+    fn set_mouse_button(
+        &self,
+        handle: SceneHandle,
+        button: u32,
+        pressed: bool,
+    ) -> EngineFuture<()> {
+        let engine = self.engine.clone();
+        async move { engine.set_mouse_button(handle, button, pressed).await }.boxed()
+    }
+
+    fn set_mouse_entered(&self, handle: SceneHandle, entered: bool) -> EngineFuture<()> {
+        let engine = self.engine.clone();
+        async move { engine.set_mouse_entered(handle, entered).await }.boxed()
     }
 
     fn create_window_for_display(
@@ -274,6 +304,11 @@ pub struct FakeEngineFacade {
     scaling_mode_calls: Arc<ArcSwap<Vec<(SceneHandle, ScalingMode)>>>,
     scaling_factor_calls: Arc<ArcSwap<Vec<(SceneHandle, f64)>>>,
     fps_calls: Arc<ArcSwap<Vec<(SceneHandle, u32)>>>,
+    mouse_poll_calls: Arc<ArcSwap<Vec<()>>>,
+    mouse_poll_block: Arc<SegQueue<ReconcileBlockGate>>,
+    mouse_position_calls: Arc<ArcSwap<Vec<(SceneHandle, f64, f64)>>>,
+    mouse_button_calls: Arc<ArcSwap<Vec<(SceneHandle, u32, bool)>>>,
+    mouse_entered_calls: Arc<ArcSwap<Vec<(SceneHandle, bool)>>>,
     window_create_calls: Arc<ArcSwap<Vec<DisplaySelector>>>,
     wallpaper_calls: Arc<ArcSwap<Vec<(DisplaySelector, WallpaperAssignment)>>>,
     reconcile_failure: Arc<ArcSwap<Option<String>>>,
@@ -395,6 +430,26 @@ impl FakeEngineFacade {
     }
 
     #[must_use]
+    pub fn mouse_poll_calls(&self) -> Vec<()> {
+        load_log(&self.mouse_poll_calls)
+    }
+
+    #[must_use]
+    pub fn mouse_position_calls(&self) -> Vec<(SceneHandle, f64, f64)> {
+        load_log(&self.mouse_position_calls)
+    }
+
+    #[must_use]
+    pub fn mouse_button_calls(&self) -> Vec<(SceneHandle, u32, bool)> {
+        load_log(&self.mouse_button_calls)
+    }
+
+    #[must_use]
+    pub fn mouse_entered_calls(&self) -> Vec<(SceneHandle, bool)> {
+        load_log(&self.mouse_entered_calls)
+    }
+
+    #[must_use]
     pub fn window_create_calls(&self) -> Vec<DisplaySelector> {
         load_log(&self.window_create_calls)
     }
@@ -433,6 +488,22 @@ impl FakeEngineFacade {
             release_rx,
         };
         self.audio_capture_block.push(gate);
+
+        ReconcileBlock {
+            blocked_rx,
+            release_tx,
+        }
+    }
+
+    #[must_use]
+    pub fn block_next_mouse_poll(&self) -> ReconcileBlock {
+        let (blocked_tx, blocked_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let gate = ReconcileBlockGate {
+            blocked_tx,
+            release_rx,
+        };
+        self.mouse_poll_block.push(gate);
 
         ReconcileBlock {
             blocked_rx,
@@ -649,6 +720,51 @@ impl EngineFacade for FakeEngineFacade {
             fake.update_direct_assignment_after_refresh(handle, |template| {
                 template.fps = fps;
             });
+            Ok(())
+        }
+        .boxed()
+    }
+
+    fn poll_mouse_position(&self) -> EngineFuture<()> {
+        let fake = self.clone();
+        async move {
+            push_log(&fake.mouse_poll_calls, ());
+            if let Some(block) = fake.mouse_poll_block.pop() {
+                let _ = block.blocked_tx.send(());
+                let _ = block.release_rx.recv();
+            }
+            Ok(())
+        }
+        .boxed()
+    }
+
+    fn set_mouse_position(&self, handle: SceneHandle, x: f64, y: f64) -> EngineFuture<()> {
+        let fake = self.clone();
+        async move {
+            push_log(&fake.mouse_position_calls, (handle, x, y));
+            Ok(())
+        }
+        .boxed()
+    }
+
+    fn set_mouse_button(
+        &self,
+        handle: SceneHandle,
+        button: u32,
+        pressed: bool,
+    ) -> EngineFuture<()> {
+        let fake = self.clone();
+        async move {
+            push_log(&fake.mouse_button_calls, (handle, button, pressed));
+            Ok(())
+        }
+        .boxed()
+    }
+
+    fn set_mouse_entered(&self, handle: SceneHandle, entered: bool) -> EngineFuture<()> {
+        let fake = self.clone();
+        async move {
+            push_log(&fake.mouse_entered_calls, (handle, entered));
             Ok(())
         }
         .boxed()

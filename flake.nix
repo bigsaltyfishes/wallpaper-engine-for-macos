@@ -62,6 +62,8 @@
           glm
           lz4.dev
           lz4
+          freetype.dev
+          freetype
           ffmpeg.dev
           ffmpeg
           shaderc

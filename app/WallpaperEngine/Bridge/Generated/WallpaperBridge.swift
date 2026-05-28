@@ -658,6 +658,14 @@ public protocol WallpaperBridgeProtocol : AnyObject {
     /**
      * # Errors
      *
+     * Returns an error when host pointer state cannot be forwarded to active
+     * wallpaper scenes.
+     */
+    func pollMousePosition() async throws
+
+    /**
+     * # Errors
+     *
      * Returns an error when display refresh fails.
      */
     func refreshDisplays() async throws  -> BridgeSnapshotBundle
@@ -906,7 +914,7 @@ open func allSnapshots()async throws  -> BridgeSnapshotBundle {
             rustFutureFunc: {
                 uniffi_wallpaper_bridge_fn_method_wallpaperbridge_all_snapshots(
                     self.uniffiClonePointer()
-                    
+
                 )
             },
             pollFunc: ffi_wallpaper_bridge_rust_future_poll_rust_buffer,
@@ -916,7 +924,7 @@ open func allSnapshots()async throws  -> BridgeSnapshotBundle {
             errorHandler: FfiConverterTypeBridgeError.lift
         )
 }
-    
+
     /**
      * # Errors
      *
@@ -1248,6 +1256,28 @@ open func playAll()async throws  -> BridgeSnapshotBundle {
         )
 }
     
+    /**
+     * # Errors
+     *
+     * Returns an error when host pointer state cannot be forwarded to active
+     * wallpaper scenes.
+     */
+open func pollMousePosition()async throws  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_wallpaper_bridge_fn_method_wallpaperbridge_poll_mouse_position(
+                    self.uniffiClonePointer()
+                )
+            },
+            pollFunc: ffi_wallpaper_bridge_rust_future_poll_void,
+            completeFunc: ffi_wallpaper_bridge_rust_future_complete_void,
+            freeFunc: ffi_wallpaper_bridge_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeBridgeError.lift
+        )
+}
+
     /**
      * # Errors
      *
@@ -4580,6 +4610,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_wallpaper_bridge_checksum_method_wallpaperbridge_play_all() != 21503) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_wallpaper_bridge_checksum_method_wallpaperbridge_poll_mouse_position() != 3037) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_wallpaper_bridge_checksum_method_wallpaperbridge_refresh_displays() != 55592) {

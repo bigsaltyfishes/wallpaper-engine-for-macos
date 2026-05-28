@@ -34,6 +34,8 @@ pub struct EngineActor {
     refresh_pending: bool,
     #[cfg(test)]
     pub test_sequence: u64,
+    #[cfg(test)]
+    fail_next_refresh_displays: bool,
 }
 
 #[derive(Clone)]
@@ -112,6 +114,8 @@ impl EngineActor {
             refresh_pending: false,
             #[cfg(test)]
             test_sequence: 0,
+            #[cfg(test)]
+            fail_next_refresh_displays: false,
         }
     }
 
@@ -206,6 +210,32 @@ impl EngineActor {
 
     pub fn set_paused(&mut self, handle: SceneHandle, paused: bool) -> Result<(), EngineError> {
         self.with_scene_mut(handle, |scene| scene.set_paused(paused))
+    }
+
+    pub fn set_mouse_position(
+        &mut self,
+        handle: SceneHandle,
+        x: f64,
+        y: f64,
+    ) -> Result<(), EngineError> {
+        self.with_scene_mut(handle, |scene| scene.set_mouse_position(x, y))
+    }
+
+    pub fn set_mouse_button(
+        &mut self,
+        handle: SceneHandle,
+        button: u32,
+        pressed: bool,
+    ) -> Result<(), EngineError> {
+        self.with_scene_mut(handle, |scene| scene.set_mouse_button(button, pressed))
+    }
+
+    pub fn set_mouse_entered(
+        &mut self,
+        handle: SceneHandle,
+        entered: bool,
+    ) -> Result<(), EngineError> {
+        self.with_scene_mut(handle, |scene| scene.set_mouse_entered(entered))
     }
 
     pub fn set_all_paused(&mut self, paused: bool) -> Result<(), EngineError> {
@@ -553,6 +583,13 @@ impl Message<messages::RefreshDisplays> for EngineActor {
         _msg: messages::RefreshDisplays,
         _ctx: &mut Context<Self, Self::Reply>,
     ) -> Self::Reply {
+        #[cfg(test)]
+        if self.fail_next_refresh_displays {
+            self.fail_next_refresh_displays = false;
+            return Err(EngineError::Platform(
+                "test display refresh failure".to_string(),
+            ));
+        }
         self.refresh_displays_now()?;
         self.publish_snapshot();
         Ok(())
@@ -699,6 +736,48 @@ impl Message<messages::SetAllPaused> for EngineActor {
     }
 }
 
+impl Message<messages::SetMousePosition> for EngineActor {
+    type Reply = Result<(), EngineError>;
+
+    async fn handle(
+        &mut self,
+        msg: messages::SetMousePosition,
+        _ctx: &mut Context<Self, Self::Reply>,
+    ) -> Self::Reply {
+        self.set_mouse_position(msg.handle, msg.x, msg.y)?;
+        self.publish_snapshot();
+        Ok(())
+    }
+}
+
+impl Message<messages::SetMouseButton> for EngineActor {
+    type Reply = Result<(), EngineError>;
+
+    async fn handle(
+        &mut self,
+        msg: messages::SetMouseButton,
+        _ctx: &mut Context<Self, Self::Reply>,
+    ) -> Self::Reply {
+        self.set_mouse_button(msg.handle, msg.button, msg.pressed)?;
+        self.publish_snapshot();
+        Ok(())
+    }
+}
+
+impl Message<messages::SetMouseEntered> for EngineActor {
+    type Reply = Result<(), EngineError>;
+
+    async fn handle(
+        &mut self,
+        msg: messages::SetMouseEntered,
+        _ctx: &mut Context<Self, Self::Reply>,
+    ) -> Self::Reply {
+        self.set_mouse_entered(msg.handle, msg.entered)?;
+        self.publish_snapshot();
+        Ok(())
+    }
+}
+
 impl Message<messages::SetRenderResolution> for EngineActor {
     type Reply = Result<(), EngineError>;
 
@@ -822,5 +901,19 @@ impl Message<SequenceForTest> for EngineActor {
         self.test_sequence += 1;
         assert_eq!(self.test_sequence, msg.expected);
         Ok(self.test_sequence)
+    }
+}
+
+#[cfg(test)]
+impl Message<messages::FailNextRefreshDisplaysForTest> for EngineActor {
+    type Reply = Result<(), EngineError>;
+
+    async fn handle(
+        &mut self,
+        _msg: messages::FailNextRefreshDisplaysForTest,
+        _ctx: &mut Context<Self, Self::Reply>,
+    ) -> Self::Reply {
+        self.fail_next_refresh_displays = true;
+        Ok(())
     }
 }
