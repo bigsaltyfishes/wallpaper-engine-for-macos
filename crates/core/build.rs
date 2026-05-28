@@ -133,13 +133,13 @@ fn static_link_search_paths(build_dir: &Path) -> Vec<PathBuf> {
         build_dir.join("src"),
         build_dir.join("src/Audio"),
         build_dir.join("src/Looper"),
-        build_dir.join("src/Particle"),
-        build_dir.join("src/RenderGraph"),
         build_dir.join("src/Scene"),
-        build_dir.join("src/Timer"),
+        build_dir.join("src/Scene/Particle"),
+        build_dir.join("src/Scene/RenderGraph"),
+        build_dir.join("src/Scene/Timer"),
+        build_dir.join("src/Scene/VulkanRender"),
         build_dir.join("src/Utils"),
         build_dir.join("src/Vulkan"),
-        build_dir.join("src/VulkanRender"),
         build_dir.join("third_party/spirv_reflect"),
     ]
 }
