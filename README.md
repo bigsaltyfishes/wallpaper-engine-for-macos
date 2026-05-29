@@ -25,7 +25,7 @@
     - [x] 视频纹理
 - [x] 参考 linux-wallpaperengine 实现的脚本引擎
     - [x] 部分支持 SceneScript
-- [x] 参考 linux-wallpaperengine 重新实现的着色器处理器
+- [x] 使用 Rust 完全重新实现的着色器管线，具有更好的兼容性和更快的代码生成速度
 - [x] 支持用户自定义属性、缩放系数
 
 以及可能还有一些我不记得的修改

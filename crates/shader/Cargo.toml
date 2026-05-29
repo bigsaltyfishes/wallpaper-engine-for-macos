@@ -1,0 +1,29 @@
+[package]
+name = "shader"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[lib]
+crate-type = ["rlib", "staticlib"]
+
+[features]
+default = []
+ffi = ["serde", "dep:serde_json"]
+serde = ["dep:serde"]
+
+[dependencies]
+linkme = "0.3.36"
+logos = "0.16.1"
+miette = { version = "7.6.0", features = ["fancy"] }
+naga = { version = "29.0.3", features = ["glsl-in", "spv-out"] }
+serde = { version = "1.0", features = ["derive"], optional = true }
+serde_json = { version = "1.0", optional = true }
+thiserror = "2.0"
+
+[dev-dependencies]
+serde_json = "1.0"
+serde_test = "1.0"
+
+[lints]
+workspace = true

@@ -39,6 +39,7 @@ fn main() {
         .define("BUILD_TESTS", "OFF")
         .define("BUILD_WAYWALLEN", "OFF")
         .define("BUILD_QML", "OFF")
+        .define("RUST_SHADER_FFI", "ON")
         .build_target("wescene-renderer")
         .build();
     debug_assert_eq!(dst, cmake_out_dir);
