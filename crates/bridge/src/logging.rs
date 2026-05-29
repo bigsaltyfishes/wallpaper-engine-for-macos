@@ -2,6 +2,7 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{self, Write},
     path::{Path, PathBuf},
+    str::FromStr,
     sync::{Arc, Mutex, OnceLock},
 };
 
@@ -61,7 +62,12 @@ impl ApplicationLogger {
             kind: BridgeErrorKind::Io,
             message: format!("failed to install application logger: {error}"),
         })?;
-        log::set_max_level(LevelFilter::Trace);
+
+        let max_level = std::env::var("WALLPAPER_ENGINE_LOG_LEVEL")
+            .ok()
+            .and_then(|value| LevelFilter::from_str(&value).ok())
+            .unwrap_or(LevelFilter::Info);
+        log::set_max_level(max_level);
         Ok(())
     }
 
