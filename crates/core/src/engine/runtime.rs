@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 use serde_json::Value;
 
@@ -8,7 +11,11 @@ use crate::{
     engine::FirstFrameCallback,
     media::audio::AudioVolume,
     owe::backend::{OweBackend, OweScene},
-    project::{ScalingMode, SceneDesc, SceneHandle, SerdeValudeExt},
+    project::{
+        ProjectManifest, ScalingMode, SceneDesc, SceneHandle, SerdeValudeExt, WallpaperProjectType,
+        validate_relative_normal_path,
+    },
+    window::WebAudioDispatcher,
 };
 
 pub struct SceneRuntime {
@@ -20,6 +27,8 @@ pub struct SceneRuntime {
     first_frame_callback: FirstFrameCallback,
     /// Opaque Open Wallpaper Engine renderer object.
     renderer: OweScene,
+    /// Active wallpaper content for this runtime.
+    content: RuntimeContent,
     /// Runtime override applied after descriptor defaults.
     scaling_mode: ScalingMode,
     /// Runtime override applied after descriptor defaults.
@@ -40,6 +49,48 @@ pub struct SceneRuntime {
     property_override_json: Option<String>,
     /// `AppKit` window that owns the `CAMetalLayer` passed to OWE.
     window: Option<WallpaperWindow>,
+}
+
+enum RuntimeContent {
+    Scene(OweScene),
+    Web(WebRuntime),
+}
+
+struct WebRuntime {
+    stop: Arc<AtomicBool>,
+    worker: Option<std::thread::JoinHandle<()>>,
+}
+
+impl WebRuntime {
+    fn start(backend: OweBackend, dispatcher: WebAudioDispatcher) -> Self {
+        let stop = Arc::new(AtomicBool::new(false));
+        let worker_stop = Arc::clone(&stop);
+        let worker = std::thread::Builder::new()
+            .name("wallpaper-web-audio-dispatch".to_string())
+            .spawn(move || {
+                let mut last_generation = None;
+                while !worker_stop.load(Ordering::Relaxed) {
+                    if let Ok((bins, generation)) = backend.current_audio_spectrum_128()
+                        && last_generation != Some(generation)
+                    {
+                        let _ = dispatcher.dispatch_audio_frame(&bins);
+                        last_generation = Some(generation);
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(16));
+                }
+            })
+            .ok();
+        Self { stop, worker }
+    }
+}
+
+impl Drop for WebRuntime {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -118,6 +169,30 @@ impl SceneRuntime {
         desc: &SceneDesc,
         state: SceneRuntimeState,
     ) -> Result<Self, EngineError> {
+        if let Some(web_entry) = resolve_web_entry(desc)? {
+            let mut stored_desc = desc.clone();
+            stored_desc.mark_shader_refresh_complete();
+            let descriptor_state = SceneRuntimeState::try_from(desc)?;
+            let mut window = WallpaperWindow::builder(desc.display.clone()).open()?;
+            window.install_web_view(&web_entry)?;
+            let web_runtime = WebRuntime::start(backend, window.web_audio_dispatcher()?);
+            let mut runtime = Self {
+                desc: stored_desc,
+                content: RuntimeContent::Web(web_runtime),
+                scaling_mode: state.scaling_mode,
+                scaling_factor: state.scaling_factor,
+                render_resolution: state.render_resolution,
+                audio_response_enabled: state.audio_response_enabled,
+                paused: state.paused,
+                audio_volume: state.audio_volume,
+                audio_muted: state.audio_muted,
+                property_override_json: state.property_override_json,
+                window: Some(window),
+            };
+            runtime.apply_runtime_properties(&descriptor_state)?;
+            return Ok(runtime);
+        }
+
         let mut stored_desc = desc.clone();
         stored_desc.mark_shader_refresh_complete();
         let window = WallpaperWindow::builder(desc.display.clone()).open()?;
@@ -135,9 +210,7 @@ impl SceneRuntime {
         let descriptor_state = SceneRuntimeState::try_from(desc)?;
         let mut runtime = Self {
             desc: desc.clone(),
-            handle,
-            first_frame_callback,
-            renderer,
+            content: RuntimeContent::Scene(renderer),
             scaling_mode: state.scaling_mode,
             scaling_factor: state.scaling_factor,
             render_resolution: state.render_resolution,
@@ -154,41 +227,58 @@ impl SceneRuntime {
     }
 
     pub fn set_scaling_mode(&mut self, mode: ScalingMode) -> Result<(), EngineError> {
-        self.renderer.set_scaling_mode(mode)?;
+        if let RuntimeContent::Scene(renderer) = &mut self.content {
+            renderer.set_scaling_mode(mode)?;
+        }
         self.scaling_mode = mode;
         self.desc.scaling_mode = mode;
         Ok(())
     }
 
     pub fn set_scaling_factor(&mut self, factor: f64) -> Result<(), EngineError> {
-        self.renderer.set_scaling_factor(factor)?;
+        if let RuntimeContent::Scene(renderer) = &mut self.content {
+            renderer.set_scaling_factor(factor)?;
+        }
         self.scaling_factor = factor;
         self.desc.scaling_factor = factor;
         Ok(())
     }
 
     pub fn set_fps(&mut self, fps: u32) -> Result<(), EngineError> {
-        self.renderer.set_target_fps(fps)?;
+        if let RuntimeContent::Scene(renderer) = &mut self.content {
+            renderer.set_target_fps(fps)?;
+        }
         self.desc.fps = fps;
         Ok(())
     }
 
     pub fn set_paused(&mut self, paused: bool) -> Result<(), EngineError> {
-        self.renderer.set_paused(paused)?;
+        if let RuntimeContent::Scene(renderer) = &mut self.content {
+            renderer.set_paused(paused)?;
+        }
         self.paused = paused;
         Ok(())
     }
 
     pub fn set_mouse_position(&mut self, x: f64, y: f64) -> Result<(), EngineError> {
-        self.renderer.set_mouse_position(x, y)
+        if let RuntimeContent::Scene(renderer) = &mut self.content {
+            renderer.set_mouse_position(x, y)?;
+        }
+        Ok(())
     }
 
     pub fn set_mouse_button(&mut self, button: u32, pressed: bool) -> Result<(), EngineError> {
-        self.renderer.set_mouse_button(button, pressed)
+        if let RuntimeContent::Scene(renderer) = &mut self.content {
+            renderer.set_mouse_button(button, pressed)?;
+        }
+        Ok(())
     }
 
     pub fn set_mouse_entered(&mut self, entered: bool) -> Result<(), EngineError> {
-        self.renderer.set_mouse_entered(entered)
+        if let RuntimeContent::Scene(renderer) = &mut self.content {
+            renderer.set_mouse_entered(entered)?;
+        }
+        Ok(())
     }
 
     pub fn set_render_resolution(
@@ -206,6 +296,14 @@ impl SceneRuntime {
         desc: &SceneDesc,
         render_resolution: Option<(u32, u32)>,
     ) -> Result<(), EngineError> {
+        if matches!(self.content, RuntimeContent::Web(_)) || resolve_web_entry(desc)?.is_some() {
+            let state = self.runtime_state();
+            let mut replacement = Self::open(backend, desc, state)?;
+            replacement.render_resolution = render_resolution;
+            let mut old = std::mem::replace(self, replacement);
+            return old.close();
+        }
+
         let mut state = self.runtime_state();
         let current_descriptor_state = SceneRuntimeState::try_from(&self.desc)?;
         let descriptor_state = SceneRuntimeState::try_from(desc)?;
@@ -262,7 +360,12 @@ impl SceneRuntime {
             let _ = window.update_display(old_display);
             return Err(error);
         }
-        let mut old_renderer = std::mem::replace(&mut self.renderer, renderer);
+        let RuntimeContent::Scene(old_renderer) =
+            std::mem::replace(&mut self.content, RuntimeContent::Scene(renderer))
+        else {
+            unreachable!("web runtime was rebuilt before opening OWE");
+        };
+        let mut old_renderer = old_renderer;
         self.desc = stored_desc;
         self.scaling_mode = state.scaling_mode;
         self.scaling_factor = state.scaling_factor;
@@ -279,7 +382,10 @@ impl SceneRuntime {
         backend: OweBackend,
         desc: &SceneDesc,
     ) -> Result<(), EngineError> {
-        self.rebuild_for_desc(backend, desc, self.render_resolution)
+        let state = self.runtime_state();
+        let replacement = Self::open(backend, desc, state)?;
+        let mut old = std::mem::replace(self, replacement);
+        old.close()
     }
 
     pub fn resize_or_rebuild(
@@ -320,12 +426,20 @@ impl SceneRuntime {
         backend: OweBackend,
         display: DisplayDesc,
     ) -> Result<(), EngineError> {
+        if matches!(self.content, RuntimeContent::Web(_)) {
+            self.update_window_display(display)?;
+            return Ok(());
+        }
+
         let _ = backend; // retained in signature for symmetry with rebuild_for_desc
         let start = std::time::Instant::now();
         let runtime_state = self.runtime_state();
 
         // 1. Pause rendering and release the renderer-side surface.
-        self.renderer.begin_surface_reconfigure()?;
+        let RuntimeContent::Scene(renderer) = &mut self.content else {
+            unreachable!("web runtime returned before scene reconfigure");
+        };
+        renderer.begin_surface_reconfigure()?;
 
         // 2. Swap the CAMetalLayer under the existing NSWindow.
         let window = self.window.as_mut().ok_or_else(|| {
@@ -341,7 +455,7 @@ impl SceneRuntime {
 
         // 4. Rebuild the Vulkan surface + swapchain + presentation passes from the new
         //    layer, and resume rendering.
-        self.renderer.finish_surface_reconfigure(
+        renderer.finish_surface_reconfigure(
             metal_layer,
             display.width,
             display.height,
@@ -353,7 +467,7 @@ impl SceneRuntime {
         // 5. OWE resumes after finishing the surface transaction. Preserve an
         //    already-paused runtime by restoring that state before returning.
         if runtime_state.paused {
-            self.renderer.set_paused(true)?;
+            renderer.set_paused(true)?;
         }
 
         // 6. Commit the new descriptor.
@@ -366,21 +480,27 @@ impl SceneRuntime {
     }
 
     pub fn set_audio_response_enabled(&mut self, enabled: bool) -> Result<(), EngineError> {
-        self.renderer.set_audio_response_enabled(enabled)?;
+        if let RuntimeContent::Scene(renderer) = &mut self.content {
+            renderer.set_audio_response_enabled(enabled)?;
+        }
         self.audio_response_enabled = enabled;
         self.desc.audio_response_enabled = enabled;
         Ok(())
     }
 
     pub fn set_audio_volume(&mut self, volume: AudioVolume) -> Result<(), EngineError> {
-        self.renderer.set_audio_volume(volume)?;
+        if let RuntimeContent::Scene(renderer) = &mut self.content {
+            renderer.set_audio_volume(volume)?;
+        }
         self.audio_volume = volume;
         self.desc.audio_volume = volume;
         Ok(())
     }
 
     pub fn set_audio_muted(&mut self, muted: bool) -> Result<(), EngineError> {
-        self.renderer.set_audio_muted(muted)?;
+        if let RuntimeContent::Scene(renderer) = &mut self.content {
+            renderer.set_audio_muted(muted)?;
+        }
         self.audio_muted = muted;
         self.desc.audio_muted = muted;
         Ok(())
@@ -390,17 +510,22 @@ impl SceneRuntime {
         &mut self,
         flat_json: Option<String>,
     ) -> Result<(), EngineError> {
-        if let Some(json) = flat_json.as_deref() {
-            self.renderer.set_property_override(json)?;
-        } else {
-            self.renderer.reset_property_override()?;
+        if let RuntimeContent::Scene(renderer) = &mut self.content {
+            if let Some(json) = flat_json.as_deref() {
+                renderer.set_property_override(json)?;
+            } else {
+                renderer.reset_property_override()?;
+            }
         }
         self.property_override_json = flat_json;
         Ok(())
     }
 
     pub fn close(&mut self) -> Result<(), EngineError> {
-        let backend_result = self.renderer.close();
+        let backend_result = match &mut self.content {
+            RuntimeContent::Scene(renderer) => renderer.close(),
+            RuntimeContent::Web(_) => Ok(()),
+        };
         if let Some(mut window) = self.window.take() {
             window.close();
         }
@@ -434,16 +559,37 @@ impl SceneRuntime {
         descriptor_state: &SceneRuntimeState,
     ) -> Result<(), EngineError> {
         let state = self.runtime_state();
-        state.apply_to(&mut self.renderer, descriptor_state)
+        if let RuntimeContent::Scene(renderer) = &mut self.content {
+            state.apply_to(renderer, descriptor_state)?;
+        }
+        Ok(())
+    }
+}
+
+fn resolve_web_entry(desc: &SceneDesc) -> Result<Option<std::path::PathBuf>, EngineError> {
+    let project_path = std::path::Path::new(&desc.scene_path);
+    if project_path.file_name().and_then(|name| name.to_str()) != Some("project.json") {
+        return Ok(None);
     }
 
-    fn renderer_first_frame_callback(&self) -> crate::owe::backend::FirstFrameCallback {
-        Arc::new({
-            let callback = self.first_frame_callback.clone();
-            let handle = self.handle;
-            move || callback(handle)
-        })
+    let manifest = ProjectManifest::load(project_path)?;
+    if manifest.project_type() != WallpaperProjectType::Web {
+        return Ok(None);
     }
+    if manifest.file().is_empty() {
+        return Err(EngineError::InvalidInput(
+            "web project file entry must not be empty".to_string(),
+        ));
+    }
+
+    let entry = std::path::Path::new(manifest.file());
+    validate_relative_normal_path(entry, "web project file entry")?;
+    Ok(Some(
+        project_path
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new(""))
+            .join(entry),
+    ))
 }
 
 impl Drop for SceneRuntime {
