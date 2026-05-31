@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, HashSet},
     fs,
+    path::PathBuf,
     sync::Arc,
 };
 
@@ -23,15 +24,9 @@ use crate::{
             CommitApplyAfterReconcile, CommitDisplayAfterReconcile, CompleteRestoreAfterReconcile,
             EditProperty, EjectWallpaperFromDisplay, GetAllSnapshots, GetAppSnapshot,
             GetLibrarySnapshot, GetMonitorInformationSnapshot, GetSettingsSnapshot,
-            GetWallpaperOptionsSnapshot, InitialFrameReady, InjectDisplayForTest,
-            InjectSceneProjectForTest, InjectSceneWallpaperConfigForTest, InjectWallpaperForTest,
-            PollMousePosition, ReconcileFailed, RefreshDisplays, RefreshLibrary,
-            ReplaceLibraryForTest, ReplaceWallpaperConfigForTest, RestorePropertyDefault,
-            SelectWallpaper, SetAudioResponseEnabled, SetDisplayConfigEnabled, SetDisplayEnabled,
-            SetDisplayMode, SetFilter, SetGlobalPlayback, SetLaunchAtLogin, SetMirrorMuted,
-            SetMirrorScalingFactor, SetMirrorScalingMode, SetMirrorTarget, SetMirrorTargetFps,
-            SetMirrorVolume, SetMuted, SetPauseOnBatteryPower, SetPowerSource, SetScalingFactor,
-            SetScalingMode, SetTargetFps, SetVolume, Shutdown,
+            SetScalingFactor, SetScalingMode, SetTargetFps, SetVolume, Shutdown,
+            SetWorkshopDir, SetAssetsDir, SetPauseOnBatteryPower, SetPowerSource,
+            InitialFrameReady,
         },
         state::BridgeActorState,
     },
@@ -525,6 +520,13 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
         Ok(())
     }
 
+    fn persist_app_config(&mut self) -> Result<(), BridgeError> {
+        if let Some(store) = &self.config_store {
+            store.save_app_config(&self.state.app_config)?;
+        }
+        Ok(())
+    }
+
     fn save_wallpaper(
         &mut self,
         wallpaper_id: String,
@@ -538,7 +540,7 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
     }
 
     fn refresh_library(&mut self) -> Result<(), BridgeError> {
-        let workshop_root = BridgePaths::new().steam_workshop_root();
+        let workshop_root = self.paths.steam_workshop_root();
         let entries = scan(&workshop_root)?;
         let project_models = entries
             .iter()
@@ -1959,6 +1961,11 @@ impl<E: EngineFacade + Clone> Message<SetLaunchAtLogin> for BridgeActor<E> {
     }
 }
 
+        self.refresh_library()?;
+        Ok(self.all_snapshots())
+    }
+}
+
 impl<E: EngineFacade + Clone> Message<SetPauseOnBatteryPower> for BridgeActor<E> {
     type Reply = messages::SetPauseOnBatteryPowerReply;
 
@@ -1978,6 +1985,20 @@ impl<E: EngineFacade + Clone> Message<SetPauseOnBatteryPower> for BridgeActor<E>
         }
         self.apply_power_policy().await?;
         self.bump_generation();
+=======
+impl<E: EngineFacade + Clone> Message<SetWorkshopDir> for BridgeActor<E> {
+    type Reply = messages::SetWorkshopDirReply;
+
+    async fn handle(
+        &mut self,
+        msg: SetWorkshopDir,
+        _ctx: &mut Context<Self, Self::Reply>,
+    ) -> Self::Reply {
+        self.paths.workshop_dir = Some(PathBuf::from(&msg.dir));
+        self.state.app_config.general.workshop_dir = Some(msg.dir);
+        self.persist_app_config()?;
+        self.refresh_library()?;
+>>>>>>> 49a0e1f (允许自定义assets和壁纸存储目录)
         Ok(self.all_snapshots())
     }
 }
@@ -2020,6 +2041,19 @@ impl<E: EngineFacade + Clone> Message<InitialFrameReady> for BridgeActor<E> {
             self.state.pending_battery_pause_after_initial_frame = false;
             self.apply_power_policy().await?;
         }
+=======
+impl<E: EngineFacade + Clone> Message<SetAssetsDir> for BridgeActor<E> {
+    type Reply = messages::SetAssetsDirReply;
+
+    async fn handle(
+        &mut self,
+        msg: SetAssetsDir,
+        _ctx: &mut Context<Self, Self::Reply>,
+    ) -> Self::Reply {
+        self.paths.assets_dir = Some(PathBuf::from(&msg.dir));
+        self.state.app_config.general.assets_dir = Some(msg.dir);
+        self.persist_app_config()?;
+>>>>>>> 49a0e1f (允许自定义assets和壁纸存储目录)
         Ok(self.all_snapshots())
     }
 }

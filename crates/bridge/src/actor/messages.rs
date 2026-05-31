@@ -183,6 +183,13 @@ pub struct SetPowerSource {
 
 pub struct InitialFrameReady;
 
+pub struct SetWorkshopDir {
+    pub dir: String,
+}
+
+pub struct SetAssetsDir {
+    pub dir: String,
+}
 pub struct EditProperty {
     pub wallpaper_id: String,
     pub property_id: String,
@@ -234,6 +241,8 @@ pub type LibrarySnapshotReply = Result<BridgeLibrarySnapshot, BridgeError>;
 pub type MonitorInformationSnapshotReply = Result<BridgeMonitorInformationSnapshot, BridgeError>;
 pub type SettingsSnapshotReply = Result<BridgeSettingsSnapshot, BridgeError>;
 pub type ClearShaderCacheReply = Result<BridgeSettingsSnapshot, BridgeError>;
+pub type SetWorkshopDirReply = Result<BridgeSnapshotBundle, BridgeError>;
+pub type SetAssetsDirReply = Result<BridgeSnapshotBundle, BridgeError>;
 pub type WallpaperOptionsSnapshotReply = Result<BridgeWallpaperOptionsSnapshot, BridgeError>;
 pub type TestMutationReply = Result<(), BridgeError>;
 pub type SelectWallpaperReply = AllSnapshotsReply;

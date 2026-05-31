@@ -37,6 +37,10 @@ impl Default for AppConfig {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GeneralCfg {
     pub last_selected_wallpaper: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workshop_dir: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assets_dir: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
