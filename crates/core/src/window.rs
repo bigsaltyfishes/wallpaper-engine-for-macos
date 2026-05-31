@@ -1,6 +1,9 @@
+use std::path::{Path, PathBuf};
+
 use objc2::{
-    ClassType, MainThreadMarker, MainThreadOnly, Message, define_class, msg_send, rc::Retained,
-    runtime::AnyObject,
+    ClassType, MainThreadMarker, MainThreadOnly, Message, define_class, msg_send,
+    rc::Retained,
+    runtime::{AnyClass, AnyObject},
 };
 use objc2_app_kit::{
     NSApplication, NSBackingStoreType, NSColor, NSScreen, NSView, NSWindow,
@@ -9,7 +12,7 @@ use objc2_app_kit::{
 #[cfg(not(test))]
 use objc2_app_kit::{NSEvent, NSEventMask, NSEventType};
 use objc2_core_graphics::{CGWindowLevelForKey, CGWindowLevelKey};
-use objc2_foundation::{NSInteger, NSPoint, NSRect, NSSize, NSThread};
+use objc2_foundation::{NSInteger, NSPoint, NSRect, NSSize, NSString, NSThread, NSURL};
 use objc2_quartz_core::CAMetalLayer;
 
 use crate::{DisplayDesc, EngineError};
@@ -445,6 +448,77 @@ impl WallpaperWindow {
         Ok(())
     }
 
+    /// Replaces the placeholder Metal view with a `WKWebView` and loads a
+    /// local HTML entry file.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the path cannot be represented for Foundation,
+    /// WebKit is unavailable, or the window has been closed.
+    pub fn install_web_view(&mut self, html_path: &Path) -> Result<(), EngineError> {
+        let Some(handle) = self.handle.as_mut() else {
+            return Err(EngineError::Platform(
+                "wallpaper window is already closed".to_string(),
+            ));
+        };
+
+        let html_path = html_path.to_path_buf();
+        let read_access_root = html_path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .map_or_else(|| PathBuf::from("."), Path::to_path_buf);
+        let handle_ref = handle.clone_for_main_thread();
+        let web_view_ptr = MainThread::dispatch(move || unsafe {
+            handle_ref.install_web_view(&html_path, &read_access_root)
+        })?;
+
+        let new_content_view =
+            MainThread::dispatch(move || unsafe { MainThread::retain_from_ptr(web_view_ptr) })?;
+        let old_content_view = std::mem::replace(&mut handle.content_view, new_content_view);
+        MainThread::dispatch(move || unsafe {
+            old_content_view.release();
+        });
+        Ok(())
+    }
+
+    /// Dispatches one Wallpaper Engine-style 128-bin audio frame to a web
+    /// wallpaper, if the current content view is a `WKWebView`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the window has been closed.
+    pub fn dispatch_web_audio_frame(&self, bins: &[f32; 128]) -> Result<(), EngineError> {
+        let Some(handle) = self.handle.as_ref() else {
+            return Err(EngineError::Platform(
+                "wallpaper window is already closed".to_string(),
+            ));
+        };
+
+        let json = serde_json::to_string(&bins[..])
+            .map_err(|error| EngineError::Platform(error.to_string()))?;
+        let handle = handle.clone_for_main_thread();
+        MainThread::dispatch(move || unsafe {
+            handle.dispatch_web_audio_frame(&json);
+        });
+        Ok(())
+    }
+
+    pub(crate) fn web_audio_dispatcher(&self) -> Result<WebAudioDispatcher, EngineError> {
+        let Some(handle) = self.handle.as_ref() else {
+            return Err(EngineError::Platform(
+                "wallpaper window is already closed".to_string(),
+            ));
+        };
+
+        let content_view = handle.content_view.as_ptr().cast::<std::ffi::c_void>();
+        let content_view = SendPtr(content_view);
+        let content_view =
+            MainThread::dispatch(move || unsafe { MainThread::retain_from_ptr(content_view) })?;
+        Ok(WebAudioDispatcher {
+            content_view: Some(content_view),
+        })
+    }
+
     /// Returns whether this Rust-owned window still has a native handle.
     #[must_use]
     pub fn is_open(&self) -> bool {
@@ -529,6 +603,37 @@ impl WallpaperWindow {
         Ok(MainThread::dispatch(move || unsafe {
             handle.native_state()
         }))
+    }
+}
+
+pub(crate) struct WebAudioDispatcher {
+    content_view: Option<MainThread>,
+}
+
+impl WebAudioDispatcher {
+    pub(crate) fn dispatch_audio_frame(&self, bins: &[f32; 128]) -> Result<(), EngineError> {
+        let json = serde_json::to_string(&bins[..])
+            .map_err(|error| EngineError::Platform(error.to_string()))?;
+        let Some(content_view) = self.content_view.as_ref() else {
+            return Err(EngineError::Platform(
+                "web audio dispatcher is closed".to_string(),
+            ));
+        };
+        let content_view = SendPtr(content_view.as_ptr().cast());
+        MainThread::dispatch(move || unsafe {
+            WindowHandleRef::dispatch_web_audio_frame_to_view(content_view, &json);
+        });
+        Ok(())
+    }
+}
+
+impl Drop for WebAudioDispatcher {
+    fn drop(&mut self) {
+        if let Some(content_view) = self.content_view.take() {
+            MainThread::dispatch(move || unsafe {
+                content_view.release();
+            });
+        }
     }
 }
 
@@ -852,6 +957,119 @@ impl WindowHandleRef {
 
         let ptr: *mut std::ffi::c_void = Retained::as_ptr(&new_layer).cast_mut().cast();
         Ok(SendPtr(ptr))
+    }
+
+    unsafe fn install_web_view(
+        self,
+        html_path: &Path,
+        read_access_root: &Path,
+    ) -> Result<SendPtr, EngineError> {
+        debug_assert!(NSThread::isMainThread_class());
+
+        let web_view_class = AnyClass::get(c"WKWebView").ok_or_else(|| {
+            EngineError::Platform("WebKit WKWebView class is unavailable".to_string())
+        })?;
+        let config_class = AnyClass::get(c"WKWebViewConfiguration").ok_or_else(|| {
+            EngineError::Platform("WebKit WKWebViewConfiguration class is unavailable".to_string())
+        })?;
+
+        let window = unsafe { &*(self.window.cast::<NSWindow>()) };
+        let current_content_view = unsafe { &*(self.content_view.cast::<NSView>()) };
+        let frame = current_content_view.frame();
+
+        let config: *mut AnyObject = unsafe { msg_send![config_class, new] };
+        let config = unsafe { Retained::from_raw(config) }.ok_or_else(|| {
+            EngineError::Platform("WKWebViewConfiguration allocation returned null".to_string())
+        })?;
+        unsafe { Self::install_wallpaper_engine_user_script(&config) }?;
+        let web_view: *mut AnyObject = unsafe { msg_send![web_view_class, alloc] };
+        let web_view: *mut AnyObject =
+            unsafe { msg_send![web_view, initWithFrame: frame, configuration: &*config] };
+        let web_view = unsafe { Retained::from_raw(web_view) }.ok_or_else(|| {
+            EngineError::Platform("WKWebView initialization returned null".to_string())
+        })?;
+
+        let html_path_string = html_path.to_string_lossy();
+        let read_access_root_string = read_access_root.to_string_lossy();
+        let html = NSString::from_str(html_path_string.as_ref());
+        let root = NSString::from_str(read_access_root_string.as_ref());
+        let html_url = NSURL::fileURLWithPath(&html);
+        let root_url = NSURL::fileURLWithPath_isDirectory(&root, true);
+        let _: *mut AnyObject = unsafe {
+            msg_send![&*web_view, loadFileURL: &*html_url, allowingReadAccessToURL: &*root_url]
+        };
+
+        let web_view_as_view = unsafe { &*(Retained::as_ptr(&web_view).cast::<NSView>()) };
+        web_view_as_view.setFrame(frame);
+        window.setContentView(Some(web_view_as_view));
+
+        let ptr: *mut std::ffi::c_void = Retained::as_ptr(&web_view).cast_mut().cast();
+        Ok(SendPtr(ptr))
+    }
+
+    unsafe fn install_wallpaper_engine_user_script(config: &AnyObject) -> Result<(), EngineError> {
+        let controller_class = AnyClass::get(c"WKUserContentController").ok_or_else(|| {
+            EngineError::Platform("WebKit WKUserContentController class is unavailable".to_string())
+        })?;
+        let script_class = AnyClass::get(c"WKUserScript").ok_or_else(|| {
+            EngineError::Platform("WebKit WKUserScript class is unavailable".to_string())
+        })?;
+
+        let source = NSString::from_str(
+            r#"
+(() => {
+  const listeners = [];
+  window.wallpaperRegisterAudioListener = function(listener) {
+    if (typeof listener === "function") {
+      listeners.push(listener);
+      listener(new Array(128).fill(0));
+    }
+  };
+  window.__wallpaperDispatchAudio = function(data) {
+    if (!Array.isArray(data) || data.length < 128) return;
+    const frame = data.slice(0, 128);
+    for (const listener of listeners.slice()) {
+      try { listener(frame); } catch (_) {}
+    }
+  };
+})();
+"#,
+        );
+        let controller: *mut AnyObject = unsafe { msg_send![controller_class, new] };
+        let controller = unsafe { Retained::from_raw(controller) }.ok_or_else(|| {
+            EngineError::Platform("WKUserContentController allocation returned null".to_string())
+        })?;
+        let script: *mut AnyObject = unsafe { msg_send![script_class, alloc] };
+        let script: *mut AnyObject = unsafe {
+            msg_send![
+                script,
+                initWithSource: &*source,
+                injectionTime: 0isize,
+                forMainFrameOnly: false
+            ]
+        };
+        let script = unsafe { Retained::from_raw(script) }.ok_or_else(|| {
+            EngineError::Platform("WKUserScript initialization returned null".to_string())
+        })?;
+        let _: () = unsafe { msg_send![&*controller, addUserScript: &*script] };
+        let _: () = unsafe { msg_send![config, setUserContentController: &*controller] };
+        Ok(())
+    }
+
+    unsafe fn dispatch_web_audio_frame(self, json: &str) {
+        debug_assert!(NSThread::isMainThread_class());
+        unsafe { Self::dispatch_web_audio_frame_to_view(SendPtr(self.content_view.cast()), json) };
+    }
+
+    unsafe fn dispatch_web_audio_frame_to_view(content_view: SendPtr, json: &str) {
+        debug_assert!(NSThread::isMainThread_class());
+        let source = NSString::from_str(&format!(
+            "window.__wallpaperDispatchAudio && window.__wallpaperDispatchAudio({json});"
+        ));
+        let web_view = unsafe { &*(content_view.0.cast::<AnyObject>()) };
+        let _: () = unsafe {
+            msg_send![web_view, evaluateJavaScript: &*source, completionHandler: std::ptr::null::<AnyObject>()]
+        };
     }
 }
 

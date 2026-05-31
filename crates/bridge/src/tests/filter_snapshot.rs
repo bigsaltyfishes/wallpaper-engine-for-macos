@@ -37,7 +37,7 @@ async fn refresh_preserves_hidden_wallpapers_across_next_snapshot_and_concurrent
     }
     let workshop = home
         .path()
-        .join("Library/Application Support/Steam/steamapps/workshop/content/431960");
+        .join("/Users/wjj/Pictures/wallpaper");
     write_project(&workshop, "scene", r#"{"type":"scene","title":"Scene"}"#);
     write_project(&workshop, "video", r#"{"type":"video","title":"Video"}"#);
 

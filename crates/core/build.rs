@@ -125,6 +125,7 @@ fn emit_static_link_flags(build_dir: &Path) {
         "OpenGL",
         "QuartzCore",
         "VideoToolbox",
+        "WebKit",
     ] {
         println!("cargo:rustc-link-lib=framework={framework}");
     }

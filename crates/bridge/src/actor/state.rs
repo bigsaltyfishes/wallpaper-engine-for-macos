@@ -5,7 +5,7 @@ pub mod drafts {
 use std::collections::BTreeMap;
 
 use drafts::WallpaperOptionsDraft;
-use wallpaper_core::project::SceneDesc;
+use wallpaper_core::project::{SceneDesc, WallpaperProjectType};
 
 use crate::{
     api::{
@@ -130,7 +130,7 @@ impl BridgeActorState {
             })
             .unwrap_or_else(|| {
                 WallpaperOptionsDraft::from_committed_with_enabled_displays(
-                    WallpaperConfig::new_for(wallpaper_id, "scene"),
+                    self.default_wallpaper_config(wallpaper_id),
                     self.enabled_selectors(wallpaper_id),
                 )
             }))
@@ -265,7 +265,7 @@ impl BridgeActorState {
                 .wallpaper_configs
                 .get(wallpaper_id)
                 .cloned()
-                .unwrap_or_else(|| WallpaperConfig::new_for(wallpaper_id, "scene"));
+                .unwrap_or_else(|| self.default_wallpaper_config(wallpaper_id));
             let enabled_displays = self.enabled_selectors(wallpaper_id);
             self.wallpaper_drafts.insert(
                 wallpaper_id.to_string(),
@@ -306,6 +306,20 @@ impl BridgeActorState {
             self.selected_wallpaper_id = None;
             self.app_config.general.last_selected_wallpaper = None;
         }
+    }
+
+    fn default_wallpaper_config(&self, wallpaper_id: &str) -> WallpaperConfig {
+        let type_str = self
+            .project_models
+            .get(wallpaper_id)
+            .map(|model| match model.project_type {
+                WallpaperProjectType::Scene => "scene",
+                WallpaperProjectType::Video => "video",
+                WallpaperProjectType::Web => "web",
+                WallpaperProjectType::Unknown => "scene",
+            })
+            .unwrap_or("scene");
+        WallpaperConfig::new_for(wallpaper_id, type_str)
     }
 
     pub fn rebase_drafts(&mut self) {

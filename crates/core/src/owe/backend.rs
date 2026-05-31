@@ -110,6 +110,23 @@ impl OweBackend {
             )
         })
     }
+
+    /// Returns the latest 128-bin Wallpaper Engine audio spectrum.
+    ///
+    /// The first 64 bins are left/mono, and the second 64 bins are right/mono.
+    /// When no system audio has been captured, OWE returns zeros.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError::Render`] when OWE rejects the output buffer.
+    pub fn current_audio_spectrum_128(&self) -> Result<([f32; 128], u64), EngineError> {
+        let mut bins = [0.0; 128];
+        let mut generation = 0;
+        call_status("owe_audio_current_spectrum_128", || unsafe {
+            sys::owe_audio_current_spectrum_128(bins.as_mut_ptr(), bins.len(), &raw mut generation)
+        })?;
+        Ok((bins, generation))
+    }
 }
 
 /// Owned `wallpaper::SceneWallpaper` backend object.

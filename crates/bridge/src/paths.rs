@@ -44,7 +44,7 @@ impl BridgePaths {
     pub fn steam_workshop_root(&self) -> PathBuf {
         self.home.as_deref().map_or_else(
             || PathBuf::from("/missing/workshop"),
-            |home| home.join("Library/Application Support/Steam/steamapps/workshop/content/431960"),
+            |home| home.join("/Users/wjj/Pictures/wallpaper"),
         )
     }
 
@@ -54,7 +54,7 @@ impl BridgePaths {
             || PathBuf::from("/missing/assets"),
             |home| {
                 home.join(
-                    "Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets",
+                    "/Users/wjj/Pictures/assets_2",
                 )
             },
         )
