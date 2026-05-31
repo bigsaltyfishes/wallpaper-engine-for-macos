@@ -27,43 +27,27 @@
     - [x] 部分支持 SceneScript
 - [x] 使用 Rust 完全重新实现的着色器管线，具有更好的兼容性和更快的代码生成速度
 - [x] 支持用户自定义属性、缩放系数
+- [x] 支持加载网页版的壁纸
+    - [x] 修复网页壁纸的音频响应（不确定修完没有）
+- [x] 支持自定义壁纸目录
 
 以及可能还有一些我不记得的修改
 
 ## 使用教程
 
-首先你需要有一份正版的 Wallpaper Engine 副本，本程序需要使用原版 Wallpaper Engine 的资源，程序不认除了 Steam 以外的安装路径。
+### 1.从GitHub Releases里面下载该应用
 
-### 1. 安装原版 Wallpaper Engine
+### 2.获取壁纸和Assets
 
-1.1 安装 Steam 并登录
+#### 方法一：从Windows版本中复制
 
-这一步是为了保证你能通过 Steam 订阅创意工坊内容，并自动下载和更新。直接去 Steam 官网下载安装 macOS 版本的 Steam 即可
+打开Windows版本的Wallpaper Engine，随便找一个壁纸，右键，在资源管理器中显示，返回到上一层目录（或者直接前往```Steam游戏安装目录\workshop\content\431960```(下载的)或者```Steam游戏安装目录\common\wallpaper_engine\projects\myprojects```(自制的)），将里面的所有文件夹复制（或者只复制自己想要的壁纸）到macOS上面的任意目录，然后打开软件，设置壁纸目录为刚才储存那些壁纸的文件夹
 
-1.2 安装 steamcmd
+再复制```Steam游戏安装目录\common\wallpaper_engine\assets```中的内容，到另一个目录（不要和壁纸放一起），设置Assets目录为对应的目录
 
-这一步是为了绕过 Steam 系统检测安装 Wallpaper Engine，你有两种方式安装
+#### 方法二：使用SteamCMD下载
 
-- 使用 [Homebrew](https://brew.sh/zh-cn/) 安装
-
-```shell
-brew install steamcmd
-```
-
-- 从 [官网](https://developer.valvesoftware.com/wiki/SteamCMD) 下载
-
-```shell
-mkdir ~/Steam && cd ~/Steam
-curl -sqL "https://steamcdn-a.akamaihd.net/client/installer/steamcmd_osx.tar.gz" | tar zxvf -
-
-# 添加到环境变量
-echo "export PATH=$PATH:$HOME/Steam" >> ~/.zshrc
-source ~/.zshrc
-```
-
-1.3 安装 Wallpaper Engine
-
-1.3.1 打开 SteamCMD 并登录
+**打开 SteamCMD 并登录**
 
 ```shell
 > steamcmd
@@ -80,7 +64,7 @@ Please confirm the login in the Steam Mobile app on your phone.
 
 如果没有给验证码，你就需要去你的 Steam APP 上批准登录
 
-1.3.2 安装 Wallpaper Engine
+**安装 Wallpaper Engine**
 
 ```shell
 # 设置平台类型为 Windows
@@ -92,9 +76,10 @@ Steam> app_update 431960 validate
 
 安装过程可能会很长，因为会连带创意工坊内容一起下载下来，安装完成后后续的更新、创意工坊内容的下载可以使用 Steam 客户端进行
 
-### 2. 安装 Wallpaper Engine for macOS
+**设置壁纸目录和Assets目录**
 
-从[发布页面](https://github.com/bigsaltyfishes/wallpaper-engine-for-macos/releases)下载最新版本的程序，解压后复制到 `应用程序` 文件夹即可。由于程序没有签名，首次运行会被阻止，你需要在 系统设置->安全性与隐私->安全性 中点击`仍要运行`批准执行。
+将壁纸目录设置为```~/Library/Application Support/Steam/steamapps/workshop/content/431960```
+将Assets目录设置为```~/Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets```
 
 ### 3. 使用
 
