@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, HashSet},
     fs,
+    path::PathBuf,
     sync::Arc,
 };
 
@@ -31,6 +32,7 @@ use crate::{
             SetFilter, SetGlobalPlayback, SetLaunchAtLogin, SetMirrorMuted, SetMirrorScalingFactor,
             SetMirrorScalingMode, SetMirrorTarget, SetMirrorTargetFps, SetMirrorVolume, SetMuted,
             SetScalingFactor, SetScalingMode, SetTargetFps, SetVolume, Shutdown,
+            SetWorkshopDir, SetAssetsDir,
         },
         state::BridgeActorState,
     },
@@ -448,6 +450,13 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
         Ok(())
     }
 
+    fn persist_app_config(&mut self) -> Result<(), BridgeError> {
+        if let Some(store) = &self.config_store {
+            store.save_app_config(&self.state.app_config)?;
+        }
+        Ok(())
+    }
+
     fn save_wallpaper(
         &mut self,
         wallpaper_id: String,
@@ -461,7 +470,7 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
     }
 
     fn refresh_library(&mut self) -> Result<(), BridgeError> {
-        let workshop_root = BridgePaths::new().steam_workshop_root();
+        let workshop_root = self.paths.steam_workshop_root();
         let entries = scan(&workshop_root)?;
         let project_models = entries
             .iter()
@@ -1882,6 +1891,37 @@ impl<E: EngineFacade + Clone> Message<SetLaunchAtLogin> for BridgeActor<E> {
     ) -> Self::Reply {
         self.launch_at_login.set_enabled(msg.enabled)?;
         Ok(self.display_bundle())
+    }
+}
+
+impl<E: EngineFacade + Clone> Message<SetWorkshopDir> for BridgeActor<E> {
+    type Reply = messages::SetWorkshopDirReply;
+
+    async fn handle(
+        &mut self,
+        msg: SetWorkshopDir,
+        _ctx: &mut Context<Self, Self::Reply>,
+    ) -> Self::Reply {
+        self.paths.workshop_dir = Some(PathBuf::from(&msg.dir));
+        self.state.app_config.general.workshop_dir = Some(msg.dir);
+        self.persist_app_config()?;
+        self.refresh_library()?;
+        Ok(self.all_snapshots())
+    }
+}
+
+impl<E: EngineFacade + Clone> Message<SetAssetsDir> for BridgeActor<E> {
+    type Reply = messages::SetAssetsDirReply;
+
+    async fn handle(
+        &mut self,
+        msg: SetAssetsDir,
+        _ctx: &mut Context<Self, Self::Reply>,
+    ) -> Self::Reply {
+        self.paths.assets_dir = Some(PathBuf::from(&msg.dir));
+        self.state.app_config.general.assets_dir = Some(msg.dir);
+        self.persist_app_config()?;
+        Ok(self.all_snapshots())
     }
 }
 

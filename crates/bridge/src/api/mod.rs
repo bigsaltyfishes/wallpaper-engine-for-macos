@@ -48,6 +48,7 @@ use crate::{
             SetGlobalPlayback, SetLaunchAtLogin, SetMirrorMuted, SetMirrorScalingFactor,
             SetMirrorScalingMode, SetMirrorTarget, SetMirrorTargetFps, SetMirrorVolume, SetMuted,
             SetScalingFactor, SetScalingMode, SetTargetFps, SetVolume, Shutdown,
+            SetWorkshopDir, SetAssetsDir,
         },
         state::BridgeActorState,
     },
@@ -357,13 +358,21 @@ impl WallpaperBridge {
     /// Returns an error when the native engine cannot start or persisted
     /// configuration cannot load.
     pub fn new() -> Result<Self, BridgeError> {
-        let paths = BridgePaths::new();
+        let config_store = ConfigStore::open(ConfigStore::default_root());
+        let loaded = config_store.load()?;
+        let mut paths = BridgePaths::new();
+        if let Some(ref dir) = loaded.config.general.workshop_dir {
+            paths = paths.with_workshop_dir(dir.as_str());
+        }
+        if let Some(ref dir) = loaded.config.general.assets_dir {
+            paths = paths.with_assets_dir(dir.as_str());
+        }
         crate::logging::ApplicationLogger::install(&paths)?;
         let engine =
             WallpaperEngine::new().map_err(|error| BridgeError::engine(error.to_string()))?;
 
         BridgeBuilder::new(RealEngineFacade::new(engine))
-            .with_config_store(ConfigStore::open(ConfigStore::default_root()))
+            .with_config_store(config_store)
             .with_paths(paths)
             .build()
     }
@@ -761,6 +770,27 @@ impl WallpaperBridge {
         enabled: bool,
     ) -> Result<BridgeDisplayMutationBundle, BridgeError> {
         self.actor.ask(SetLaunchAtLogin { enabled }).await
+    }
+
+    /// # Errors
+    ///
+    /// Returns an error when the directory cannot be set or the library
+    /// cannot be rescanned.
+    pub async fn set_workshop_dir(
+        &self,
+        dir: String,
+    ) -> Result<BridgeSnapshotBundle, BridgeError> {
+        self.actor.ask(SetWorkshopDir { dir }).await
+    }
+
+    /// # Errors
+    ///
+    /// Returns an error when the directory cannot be persisted.
+    pub async fn set_assets_dir(
+        &self,
+        dir: String,
+    ) -> Result<BridgeSnapshotBundle, BridgeError> {
+        self.actor.ask(SetAssetsDir { dir }).await
     }
 
     /// # Errors

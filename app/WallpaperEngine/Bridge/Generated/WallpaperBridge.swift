@@ -2866,10 +2866,12 @@ public struct BridgeSettingsSnapshot {
     public var bridgeVersion: String
     public var coreVersion: String
     public var storage: BridgeStorageStatus
+    public var workshopDir: String
+    public var assetsDir: String
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(displays: [BridgeDisplaySettingsRow], launchAtLoginAvailable: Bool, launchAtLoginEnabled: Bool, appVersion: String, gitSha: String, bridgeVersion: String, coreVersion: String, storage: BridgeStorageStatus) {
+    public init(displays: [BridgeDisplaySettingsRow], launchAtLoginAvailable: Bool, launchAtLoginEnabled: Bool, appVersion: String, gitSha: String, bridgeVersion: String, coreVersion: String, storage: BridgeStorageStatus, workshopDir: String, assetsDir: String) {
         self.displays = displays
         self.launchAtLoginAvailable = launchAtLoginAvailable
         self.launchAtLoginEnabled = launchAtLoginEnabled
@@ -2878,6 +2880,8 @@ public struct BridgeSettingsSnapshot {
         self.bridgeVersion = bridgeVersion
         self.coreVersion = coreVersion
         self.storage = storage
+        self.workshopDir = workshopDir
+        self.assetsDir = assetsDir
     }
 }
 
@@ -2909,6 +2913,12 @@ extension BridgeSettingsSnapshot: Equatable, Hashable {
         if lhs.storage != rhs.storage {
             return false
         }
+        if lhs.workshopDir != rhs.workshopDir {
+            return false
+        }
+        if lhs.assetsDir != rhs.assetsDir {
+            return false
+        }
         return true
     }
 
@@ -2921,6 +2931,8 @@ extension BridgeSettingsSnapshot: Equatable, Hashable {
         hasher.combine(bridgeVersion)
         hasher.combine(coreVersion)
         hasher.combine(storage)
+        hasher.combine(workshopDir)
+        hasher.combine(assetsDir)
     }
 }
 
@@ -2939,7 +2951,9 @@ public struct FfiConverterTypeBridgeSettingsSnapshot: FfiConverterRustBuffer {
                 gitSha: FfiConverterString.read(from: &buf), 
                 bridgeVersion: FfiConverterString.read(from: &buf), 
                 coreVersion: FfiConverterString.read(from: &buf), 
-                storage: FfiConverterTypeBridgeStorageStatus.read(from: &buf)
+                storage: FfiConverterTypeBridgeStorageStatus.read(from: &buf),
+                workshopDir: FfiConverterString.read(from: &buf),
+                assetsDir: FfiConverterString.read(from: &buf)
         )
     }
 
@@ -2952,6 +2966,8 @@ public struct FfiConverterTypeBridgeSettingsSnapshot: FfiConverterRustBuffer {
         FfiConverterString.write(value.bridgeVersion, into: &buf)
         FfiConverterString.write(value.coreVersion, into: &buf)
         FfiConverterTypeBridgeStorageStatus.write(value.storage, into: &buf)
+        FfiConverterString.write(value.workshopDir, into: &buf)
+        FfiConverterString.write(value.assetsDir, into: &buf)
     }
 }
 
