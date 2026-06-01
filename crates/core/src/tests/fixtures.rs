@@ -6,9 +6,9 @@ use std::{
 use crate::project::SceneSourceResolution;
 
 pub const WORKSHOP_ROOT: &str =
-    "/Users/wjj/Pictures/wallpaper";
+    "/Users/molyuu/Library/Application Support/Steam/steamapps/workshop/content/431960";
 pub const ASSETS_ROOT: &str =
-    "/Users/wjj/Pictures/assets_2";
+    "/Users/molyuu/Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets";
 
 pub fn project_path(id: &str) -> PathBuf {
     Path::new(WORKSHOP_ROOT).join(id).join("project.json")
