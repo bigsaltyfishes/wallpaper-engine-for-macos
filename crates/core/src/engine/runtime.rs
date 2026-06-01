@@ -74,6 +74,31 @@ impl WebRuntime {
             .ok();
         Self { stop, worker }
     }
+    fn resolve_web_entry(desc: &SceneDesc) -> Result<Option<std::path::PathBuf>, EngineError> {
+        let project_path = std::path::Path::new(&desc.scene_path);
+        if project_path.file_name().and_then(|name| name.to_str()) != Some("project.json") {
+           return Ok(None);
+        }
+
+        let manifest = ProjectManifest::load(project_path)?;
+        if manifest.project_type() != WallpaperProjectType::Web {
+            return Ok(None);
+        }
+        if manifest.file().is_empty() {
+            return Err(EngineError::InvalidInput(
+                "web project file entry must not be empty".to_string(),
+            ));
+        }
+
+        let entry = std::path::Path::new(manifest.file());
+        validate_relative_normal_path(entry, "web project file entry")?;
+        Ok(Some(
+            project_path
+                .parent()
+                .unwrap_or_else(|| std::path::Path::new(""))
+                .join(entry),
+        ))
+    }
 }
 
 impl Drop for WebRuntime {
@@ -158,7 +183,7 @@ impl SceneRuntime {
         desc: &SceneDesc,
         state: SceneRuntimeState,
     ) -> Result<Self, EngineError> {
-        if let Some(web_entry) = resolve_web_entry(desc)? {
+        if let Some(web_entry) = WebRuntime::resolve_web_entry(desc)? {
             let mut stored_desc = desc.clone();
             stored_desc.mark_shader_refresh_complete();
             let descriptor_state = SceneRuntimeState::try_from(desc)?;
@@ -281,7 +306,7 @@ impl SceneRuntime {
         desc: &SceneDesc,
         render_resolution: Option<(u32, u32)>,
     ) -> Result<(), EngineError> {
-        if matches!(self.content, RuntimeContent::Web(_)) || resolve_web_entry(desc)?.is_some() {
+        if matches!(self.content, RuntimeContent::Web(_)) || WebRuntime::resolve_web_entry(desc)?.is_some() {
             let state = self.runtime_state();
             let mut replacement = Self::open(backend, desc, state)?;
             replacement.render_resolution = render_resolution;
@@ -547,32 +572,6 @@ impl SceneRuntime {
         }
         Ok(())
     }
-}
-
-fn resolve_web_entry(desc: &SceneDesc) -> Result<Option<std::path::PathBuf>, EngineError> {
-    let project_path = std::path::Path::new(&desc.scene_path);
-    if project_path.file_name().and_then(|name| name.to_str()) != Some("project.json") {
-        return Ok(None);
-    }
-
-    let manifest = ProjectManifest::load(project_path)?;
-    if manifest.project_type() != WallpaperProjectType::Web {
-        return Ok(None);
-    }
-    if manifest.file().is_empty() {
-        return Err(EngineError::InvalidInput(
-            "web project file entry must not be empty".to_string(),
-        ));
-    }
-
-    let entry = std::path::Path::new(manifest.file());
-    validate_relative_normal_path(entry, "web project file entry")?;
-    Ok(Some(
-        project_path
-            .parent()
-            .unwrap_or_else(|| std::path::Path::new(""))
-            .join(entry),
-    ))
 }
 
 impl Drop for SceneRuntime {
