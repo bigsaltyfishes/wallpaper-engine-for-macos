@@ -223,6 +223,8 @@ pub struct MonitorSettingsCfg {
     pub volume: f32,
     #[serde(default)]
     pub muted: bool,
+    #[serde(default)]
+    pub horizontal_flip: bool,
 }
 
 impl Default for MonitorSettingsCfg {
@@ -234,6 +236,7 @@ impl Default for MonitorSettingsCfg {
             target_fps: default_target_fps(),
             volume: default_monitor_volume(),
             muted: false,
+            horizontal_flip: false,
         }
     }
 }

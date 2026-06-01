@@ -87,6 +87,11 @@ pub struct SetDisplayMode {
     pub mode: BridgeDisplayMode,
 }
 
+pub struct SetDisplayHorizontalFlip {
+    pub display_id: String,
+    pub enabled: bool,
+}
+
 pub struct SetMirrorTarget {
     pub display_id: String,
     pub target_display_id: String,
@@ -244,6 +249,7 @@ pub type SetFilterReply = AllSnapshotsReply;
 pub type DisplayMutationReply = Result<BridgeDisplayMutationBundle, crate::api::BridgeError>;
 pub type SetDisplayEnabledReply = DisplayMutationReply;
 pub type SetDisplayModeReply = DisplayMutationReply;
+pub type SetDisplayHorizontalFlipReply = DisplayMutationReply;
 pub type SetMirrorTargetReply = DisplayMutationReply;
 pub type SetMirrorScalingModeReply = DisplayMutationReply;
 pub type SetMirrorScalingFactorReply = DisplayMutationReply;

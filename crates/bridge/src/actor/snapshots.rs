@@ -349,6 +349,7 @@ impl BridgeActorState {
                         max_fps,
                         muted: settings.muted,
                         volume: settings.volume,
+                        horizontal_flip: settings.horizontal_flip,
                     })
                 })
                 .collect()

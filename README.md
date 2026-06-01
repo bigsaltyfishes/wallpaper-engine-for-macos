@@ -23,6 +23,7 @@
 - [x] 使用 FFmpeg 和 Apple VideoToolBox 实现的音频和视频管线
     - [x] 音频解码硬件加速
     - [x] 视频纹理
+    - [x] 允许左右翻转壁纸，适应macOS图标居右
 - [x] 参考 linux-wallpaperengine 实现的脚本引擎
     - [x] 部分支持 SceneScript
 - [x] 使用 Rust 完全重新实现的着色器管线，具有更好的兼容性和更快的代码生成速度

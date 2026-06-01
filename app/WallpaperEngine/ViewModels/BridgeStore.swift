@@ -143,6 +143,11 @@ final class BridgeStore {
         apply(bundle)
     }
 
+    func setDisplayHorizontalFlipAsync(displayId: String, enabled: Bool) async throws {
+        let bundle = try await bridge.setDisplayHorizontalFlip(displayId: displayId, enabled: enabled)
+        apply(bundle)
+    }
+
     func setMirrorTargetAsync(displayId: String, targetDisplayId: String) async throws {
         let bundle = try await bridge.setMirrorTarget(displayId: displayId, targetDisplayId: targetDisplayId)
         apply(bundle)

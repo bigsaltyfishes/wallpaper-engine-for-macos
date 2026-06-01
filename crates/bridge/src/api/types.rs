@@ -179,6 +179,7 @@ pub struct BridgeDisplaySettingsRow {
     pub max_fps: u32,
     pub muted: bool,
     pub volume: f32,
+    pub horizontal_flip: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]

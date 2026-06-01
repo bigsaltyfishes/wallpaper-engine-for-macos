@@ -83,6 +83,7 @@ impl OweBackend {
         scene.set_first_frame_callback(first_frame_callback)?;
         scene.set_scaling_mode(scaling_mode)?;
         scene.set_scaling_factor(scaling_factor)?;
+        scene.set_horizontal_flip(desc.horizontal_flip)?;
         Ok(scene)
     }
 
@@ -166,6 +167,18 @@ impl OweScene {
     pub fn scaling_factor() -> Result<*const c_char, EngineError> {
         Self::property_name("owe_property_scaling_factor", || unsafe {
             sys::owe_property_scaling_factor()
+        })
+    }
+
+    /// Retrieves the current value of the horizontal flip property from OWE.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError::Render`] if OWE returns a null property name or
+    /// [`EngineError::Crash`] if the FFI call unwinds.
+    pub fn horizontal_flip() -> Result<*const c_char, EngineError> {
+        Self::property_name("owe_property_horizontal_flip", || unsafe {
+            sys::owe_property_horizontal_flip()
         })
     }
 
@@ -376,6 +389,16 @@ impl OweScene {
     #[allow(clippy::cast_possible_truncation)]
     pub fn set_scaling_factor(&mut self, factor: f64) -> Result<(), EngineError> {
         self.set_property_float(Self::scaling_factor()?, factor as f32)
+    }
+
+    /// Sets whether the renderer should mirror final presentation left-to-right.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] if the scene is closed, OWE property lookup
+    /// fails, or OWE rejects the property update.
+    pub fn set_horizontal_flip(&mut self, enabled: bool) -> Result<(), EngineError> {
+        self.set_property_bool(Self::horizontal_flip()?, enabled)
     }
 
     /// Sets the target renderer frame rate.

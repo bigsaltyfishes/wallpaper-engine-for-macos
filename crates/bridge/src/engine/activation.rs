@@ -66,8 +66,9 @@ impl ActivationInputs<'_> {
                 continue;
             }
 
-            let scene =
+            let mut scene =
                 self.scene_for_monitor(display.clone(), wallpaper_id, wallpaper, monitor)?;
+            scene.horizontal_flip = self.monitor_horizontal_flip(monitor);
             used_displays.push(display);
             scenes.push(scene);
         }
@@ -123,6 +124,7 @@ impl ActivationInputs<'_> {
             scene.display = display.clone();
             scene.scaling_mode = settings.parse_scaling_mode();
             scene.scaling_factor = settings.scaling_factor;
+            scene.horizontal_flip = settings.horizontal_flip;
             scene.fps = scene
                 .display
                 .refresh_rate_hz
@@ -158,6 +160,14 @@ impl ActivationInputs<'_> {
             paths: self.paths,
             force_shader_refresh: self.force_shader_refresh,
         })
+    }
+
+    fn monitor_horizontal_flip(&self, monitor: &MonitorCfg) -> bool {
+        self.app_config
+            .monitor_settings
+            .iter()
+            .find(|settings| settings.selector == monitor.selector)
+            .is_some_and(|settings| settings.horizontal_flip)
     }
 }
 
