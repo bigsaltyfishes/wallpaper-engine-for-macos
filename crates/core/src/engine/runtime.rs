@@ -1,6 +1,9 @@
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
 };
 
 use serde_json::Value;
@@ -68,15 +71,11 @@ impl WebRuntime {
         let worker = std::thread::Builder::new()
             .name("wallpaper-web-audio-dispatch".to_string())
             .spawn(move || {
-                let mut last_generation = None;
                 while !worker_stop.load(Ordering::Relaxed) {
-                    if let Ok((bins, generation)) = backend.current_audio_spectrum_128()
-                        && last_generation != Some(generation)
-                    {
+                    if let Ok((bins, _generation)) = backend.current_audio_spectrum_128() {
                         let _ = dispatcher.dispatch_audio_frame(&bins);
-                        last_generation = Some(generation);
                     }
-                    std::thread::sleep(std::time::Duration::from_millis(16));
+                    std::thread::sleep(Duration::from_millis(16));
                 }
             })
             .ok();
