@@ -1934,10 +1934,17 @@ impl<E: EngineFacade + Clone> Message<SetWorkshopDir> for BridgeActor<E> {
         msg: SetWorkshopDir,
         _ctx: &mut Context<Self, Self::Reply>,
     ) -> Self::Reply {
-        self.paths.workshop_dir = Some(PathBuf::from(&msg.dir));
+        let workshop_dir = PathBuf::from(&msg.dir);
+        if !workshop_dir.is_dir() {
+            return Err(BridgeError::invalid_input(format!(
+                "workshop directory does not exist: {}",
+                msg.dir
+            )));
+        }
+        self.paths.workshop_dir = Some(workshop_dir);
         self.state.app_config.general.workshop_dir = Some(msg.dir);
-        self.persist_app_config()?;
         self.refresh_library()?;
+        self.persist_app_config()?;
         Ok(self.all_snapshots())
     }
 }
@@ -1950,7 +1957,14 @@ impl<E: EngineFacade + Clone> Message<SetAssetsDir> for BridgeActor<E> {
         msg: SetAssetsDir,
         _ctx: &mut Context<Self, Self::Reply>,
     ) -> Self::Reply {
-        self.paths.assets_dir = Some(PathBuf::from(&msg.dir));
+        let assets_dir = PathBuf::from(&msg.dir);
+        if !assets_dir.is_dir() {
+            return Err(BridgeError::invalid_input(format!(
+                "assets directory does not exist: {}",
+                msg.dir
+            )));
+        }
+        self.paths.assets_dir = Some(assets_dir);
         self.state.app_config.general.assets_dir = Some(msg.dir);
         self.persist_app_config()?;
         Ok(self.all_snapshots())

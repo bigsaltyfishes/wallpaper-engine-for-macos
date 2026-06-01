@@ -214,7 +214,8 @@ pub struct BridgeSettingsSnapshot {
     pub git_sha: String,
     pub bridge_version: String,
     pub core_version: String,
-    pub storage: BridgeStorageStatus,    pub workshop_dir: String,
+    pub storage: BridgeStorageStatus,
+    pub workshop_dir: String,
     pub assets_dir: String,}
 
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]

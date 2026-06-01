@@ -209,7 +209,7 @@ struct ProgramSettingsSection: View {
         if panel.runModal() == .OK {
             guard let url = panel.url else { return }
             performAsyncBridgeAction {
-                try await store.setWorkshopDirAsync(dir: url.path())
+                try await store.setWorkshopDirAsync(dir: url.path)
             }
         }
     }
@@ -225,7 +225,7 @@ struct ProgramSettingsSection: View {
         if panel.runModal() == .OK {
             guard let url = panel.url else { return }
             performAsyncBridgeAction {
-                try await store.setAssetsDirAsync(dir: url.path())
+                try await store.setAssetsDirAsync(dir: url.path)
             }
         }
     }

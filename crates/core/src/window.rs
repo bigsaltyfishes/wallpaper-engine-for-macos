@@ -989,10 +989,14 @@ impl WindowHandleRef {
             EngineError::Platform("WKWebView initialization returned null".to_string())
         })?;
 
-        let html_path_string = html_path.to_string_lossy();
-        let read_access_root_string = read_access_root.to_string_lossy();
-        let html = NSString::from_str(html_path_string.as_ref());
-        let root = NSString::from_str(read_access_root_string.as_ref());
+        let html_path_string = html_path.to_str().ok_or_else(|| {
+            EngineError::InvalidInput("html_path is not valid UTF-8".to_string())
+        })?;
+        let read_access_root_string = read_access_root.to_str().ok_or_else(|| {
+            EngineError::InvalidInput("read_access_root is not valid UTF-8".to_string())
+        })?;
+        let html = NSString::from_str(html_path_string);
+        let root = NSString::from_str(read_access_root_string);
         let html_url = NSURL::fileURLWithPath(&html);
         let root_url = NSURL::fileURLWithPath_isDirectory(&root, true);
         let _: *mut AnyObject = unsafe {
