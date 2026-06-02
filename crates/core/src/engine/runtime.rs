@@ -1,11 +1,3 @@
-use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-    time::Duration,
-};
-
 use serde_json::Value;
 
 use crate::{
@@ -18,7 +10,6 @@ use crate::{
         ProjectManifest, ScalingMode, SceneDesc, SceneHandle, SerdeValudeExt, WallpaperProjectType,
         validate_relative_normal_path,
     },
-    window::WebAudioDispatcher,
 };
 
 pub struct SceneRuntime {
@@ -56,35 +47,16 @@ pub struct SceneRuntime {
 
 enum RuntimeContent {
     Scene(OweScene),
-    Web(WebRuntime),
+    Web(wallpaper_web::Runtime),
 }
 
-struct WebRuntime {
-    stop: Arc<AtomicBool>,
-    worker: Option<std::thread::JoinHandle<()>>,
-}
+struct WebRuntime;
 
 impl WebRuntime {
-    fn start(backend: OweBackend, dispatcher: WebAudioDispatcher) -> Self {
-        let stop = Arc::new(AtomicBool::new(false));
-        let worker_stop = Arc::clone(&stop);
-        let worker = std::thread::Builder::new()
-            .name("wallpaper-web-audio-dispatch".to_string())
-            .spawn(move || {
-                while !worker_stop.load(Ordering::Relaxed) {
-                    if let Ok((bins, _generation)) = backend.current_audio_spectrum_128() {
-                        let _ = dispatcher.dispatch_audio_frame(&bins);
-                    }
-                    std::thread::sleep(Duration::from_millis(16));
-                }
-            })
-            .ok();
-        Self { stop, worker }
-    }
-    fn resolve_web_entry(desc: &SceneDesc) -> Result<Option<std::path::PathBuf>, EngineError> {
+    fn resolve_entry(desc: &SceneDesc) -> Result<Option<std::path::PathBuf>, EngineError> {
         let project_path = std::path::Path::new(&desc.scene_path);
         if project_path.file_name().and_then(|name| name.to_str()) != Some("project.json") {
-           return Ok(None);
+            return Ok(None);
         }
 
         let manifest = ProjectManifest::load(project_path)?;
@@ -105,15 +77,6 @@ impl WebRuntime {
                 .unwrap_or_else(|| std::path::Path::new(""))
                 .join(entry),
         ))
-    }
-}
-
-impl Drop for WebRuntime {
-    fn drop(&mut self) {
-        self.stop.store(true, Ordering::Relaxed);
-        if let Some(worker) = self.worker.take() {
-            let _ = worker.join();
-        }
     }
 }
 
@@ -193,13 +156,21 @@ impl SceneRuntime {
         desc: &SceneDesc,
         state: SceneRuntimeState,
     ) -> Result<Self, EngineError> {
-        if let Some(web_entry) = WebRuntime::resolve_web_entry(desc)? {
+        if let Some(web_entry) = WebRuntime::resolve_entry(desc)? {
             let mut stored_desc = desc.clone();
             stored_desc.mark_shader_refresh_complete();
             let descriptor_state = SceneRuntimeState::try_from(desc)?;
             let mut window = WallpaperWindow::builder(desc.display.clone()).open()?;
             window.install_web_view(&web_entry)?;
-            let web_runtime = WebRuntime::start(backend, window.web_audio_dispatcher()?);
+            let web_runtime = wallpaper_web::Runtime::start(
+                move || {
+                    backend
+                        .current_audio_spectrum_128()
+                        .ok()
+                        .map(|(bins, _)| bins)
+                },
+                window.web_audio_dispatcher()?,
+            );
             let mut runtime = Self {
                 desc: stored_desc,
                 content: RuntimeContent::Web(web_runtime),
@@ -320,7 +291,9 @@ impl SceneRuntime {
         desc: &SceneDesc,
         render_resolution: Option<(u32, u32)>,
     ) -> Result<(), EngineError> {
-        if matches!(self.content, RuntimeContent::Web(_)) || WebRuntime::resolve_web_entry(desc)?.is_some() {
+        if matches!(self.content, RuntimeContent::Web(_))
+            || WebRuntime::resolve_entry(desc)?.is_some()
+        {
             let state = self.runtime_state();
             let mut replacement = Self::open(backend, desc, state)?;
             replacement.render_resolution = render_resolution;
