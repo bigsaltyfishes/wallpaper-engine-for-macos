@@ -304,6 +304,97 @@ unsafe fn install_wallpaper_engine_user_script(
     }
   });
   window.__wallpaperDispatchProperties = applyProperties;
+
+  let currentScalingMode = "stretch";
+  let currentScalingFactor = 1.0;
+
+  function applyScaling() {
+    const html = document.documentElement;
+    html.style.transformOrigin = "0 0";
+    if (currentScalingMode === "stretch" && Math.abs(currentScalingFactor - 1.0) < 0.001) {
+      html.style.transform = "";
+      return;
+    }
+    if (currentScalingMode === "none" || currentScalingMode === "stretch") {
+      html.style.transform = "scale(" + currentScalingFactor + ")";
+      return;
+    }
+    const body = document.body;
+    const cw = body.scrollWidth || window.innerWidth;
+    const ch = body.scrollHeight || window.innerHeight;
+    if (cw <= 0 || ch <= 0) return;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const contentRatio = cw / ch;
+    const viewRatio = vw / vh;
+    let s;
+    if (currentScalingMode === "fit") {
+      s = contentRatio > viewRatio ? vw / cw : vh / ch;
+    } else {
+      s = contentRatio > viewRatio ? vh / ch : vw / cw;
+    }
+    s *= currentScalingFactor;
+    const ox = (vw - cw * s) / 2;
+    const oy = (vh - ch * s) / 2;
+    html.style.transform = "translate(" + ox + "px, " + oy + "px) scale(" + s + ")";
+  }
+
+  window.__wallpaperSetScalingMode = function(mode) {
+    currentScalingMode = mode;
+    applyScaling();
+  };
+  window.__wallpaperSetScalingFactor = function(factor) {
+    currentScalingFactor = factor;
+    applyScaling();
+  };
+
+  let targetFps = 0;
+  const origRAF = window.requestAnimationFrame;
+  const origCAF = window.cancelAnimationFrame;
+  let rafPending = [];
+  let rafRunning = false;
+  let rafLastTime = 0;
+
+  function rafTick(now) {
+    const elapsed = now - rafLastTime;
+    const interval = targetFps > 0 ? 1000 / targetFps : 0;
+    if (interval <= 0 || elapsed >= interval) {
+      rafLastTime = now;
+      const batch = rafPending;
+      rafPending = [];
+      for (let i = 0; i < batch.length; i++) {
+        try { batch[i](now); } catch (_) {}
+      }
+    }
+    if (rafPending.length > 0) {
+      origRAF(rafTick);
+    } else {
+      rafRunning = false;
+    }
+  }
+
+  window.requestAnimationFrame = function(cb) {
+    rafPending.push(cb);
+    if (!rafRunning) {
+      rafRunning = true;
+      rafLastTime = performance.now();
+      origRAF(rafTick);
+    }
+    return 0;
+  };
+
+  window.cancelAnimationFrame = function() {
+    rafPending = [];
+    rafRunning = false;
+  };
+
+  window.__wallpaperSetFps = function(fps) {
+    targetFps = fps;
+  };
+
+  window.addEventListener("resize", applyScaling);
+  if (document.readyState === "complete") { applyScaling(); }
+  else { window.addEventListener("load", applyScaling); }
 })();
 "#
     .replace("__INITIAL_PROPERTIES__", &initial_properties);
@@ -410,6 +501,24 @@ impl Runtime {
     pub fn dispatch_properties(&self, properties: &Properties) -> Result<(), WebError> {
         self.property_dispatcher.dispatch_properties(properties)
     }
+
+    pub fn set_scaling_mode(&self, mode: &str) -> Result<(), WebError> {
+        self.property_dispatcher.evaluate_js(&format!(
+            "window.__wallpaperSetScalingMode && window.__wallpaperSetScalingMode(\"{mode}\");"
+        ))
+    }
+
+    pub fn set_scaling_factor(&self, factor: f64) -> Result<(), WebError> {
+        self.property_dispatcher.evaluate_js(&format!(
+            "window.__wallpaperSetScalingFactor && window.__wallpaperSetScalingFactor({factor});"
+        ))
+    }
+
+    pub fn set_fps(&self, fps: u32) -> Result<(), WebError> {
+        self.property_dispatcher.evaluate_js(&format!(
+            "window.__wallpaperSetFps && window.__wallpaperSetFps({fps});"
+        ))
+    }
 }
 
 impl Drop for Runtime {
@@ -443,14 +552,22 @@ impl PropertyDispatcher {
             return Ok(());
         }
         let json = properties.to_json_string()?;
+        let script = format!(
+            "window.__wallpaperDispatchProperties && window.__wallpaperDispatchProperties({json});"
+        );
+        self.evaluate_js(&script)
+    }
+
+    pub fn evaluate_js(&self, script: &str) -> Result<(), WebError> {
         let Some(content_view) = self.content_view.as_ref() else {
             return Err(WebError::Platform(
-                "web property dispatcher is closed".to_string(),
+                "web dispatcher is closed".to_string(),
             ));
         };
         let content_view = ObjcPtr::new(content_view.as_ptr().cast());
+        let script = script.to_string();
         MainThread::dispatch(move || unsafe {
-            dispatch_properties_to_view(content_view, &json);
+            evaluate_js_on_view(content_view, &script);
         });
         Ok(())
     }
@@ -479,9 +596,17 @@ unsafe fn dispatch_audio_frame_to_view(content_view: ObjcPtr, json: &str) {
 
 unsafe fn dispatch_properties_to_view(content_view: ObjcPtr, json: &str) {
     debug_assert!(NSThread::isMainThread_class());
-    let source = NSString::from_str(&format!(
-        "window.__wallpaperDispatchProperties && window.__wallpaperDispatchProperties({json});"
-    ));
+    evaluate_js_on_view(
+        content_view,
+        &format!(
+            "window.__wallpaperDispatchProperties && window.__wallpaperDispatchProperties({json});"
+        ),
+    );
+}
+
+unsafe fn evaluate_js_on_view(content_view: ObjcPtr, script: &str) {
+    debug_assert!(NSThread::isMainThread_class());
+    let source = NSString::from_str(script);
     let web_view = unsafe { &*(content_view.as_ptr().cast::<AnyObject>()) };
     let _: () = unsafe {
         msg_send![web_view, evaluateJavaScript: &*source, completionHandler: std::ptr::null::<AnyObject>()]
