@@ -1,17 +1,17 @@
 use shader::{
     ShaderCompiler, ShaderStageKind,
     compile::NagaCompiler,
-    legalize::{LegalizedStageSource, Legalizer},
+    legalize::{Codegen, CodegenStageSource},
     syntax::ShaderModule,
 };
 
-fn legalize(stage: ShaderStageKind, source: &str) -> LegalizedStageSource {
+fn legalize(stage: ShaderStageKind, source: &str) -> CodegenStageSource {
     let module = ShaderModule::parse(stage, source).expect("module parses");
-    Legalizer.legalize(&module).expect("shader legalizes")
+    Codegen.legalize(&module).expect("shader legalizes")
 }
 
 #[test]
-fn type_coercion_policy_widens_vec2_constructor_in_vec3_binary_expression() {
+fn type_coercion_strategy_widens_vec2_constructor_in_vec3_binary_expression() {
     let source = concat!(
         "void main() {\n",
         "    vec3 base = vec3(1.0);\n",
@@ -29,7 +29,116 @@ fn type_coercion_policy_widens_vec2_constructor_in_vec3_binary_expression() {
 }
 
 #[test]
-fn type_coercion_policy_broadcasts_shadowed_scalar_identifier() {
+fn type_coercion_strategy_does_not_widen_vec2_constructor_next_to_swizzled_vec3() {
+    let source = concat!(
+        "void main() {\n",
+        "    vec3 offset = vec3(0.001, 0.002, 0.003);\n",
+        "    vec4 coords = vec4(0.0);\n",
+        "    float chromatic = 0.5;\n",
+        "    coords.xz += offset.xy + vec2(0.005, -0.0005) * chromatic;\n",
+        "    gl_FragColor = coords;\n",
+        "}\n",
+    );
+
+    let legalized = legalize(ShaderStageKind::Fragment, source);
+    let source = legalized.source();
+
+    assert!(
+        source.contains("coords.xz += offset.xy + vec2(0.005, -0.0005) * chromatic;"),
+        "{source}"
+    );
+    assert!(!source.contains("vec3(vec2(0.005, -0.0005), 0.0)"));
+
+    let artifact = NagaCompiler
+        .compile_stage(ShaderStageKind::Fragment, &legalized)
+        .expect("swizzled vec3 peer should keep vec2 expression width");
+    assert_eq!(artifact.kind(), ShaderStageKind::Fragment);
+}
+
+#[test]
+fn type_coercion_strategy_does_not_widen_vec2_initializer_binary_expression() {
+    let source = concat!(
+        "vec2 rotateVec2(vec2 v, float r) {\n",
+        "    vec2 cs = vec2(cos(r), sin(r));\n",
+        "    return vec2(v.x * cs.x - v.y * cs.y, v.x * cs.y + v.y * cs.x);\n",
+        "}\n",
+        "void main() {\n",
+        "    gl_FragColor = vec4(rotateVec2(vec2(0.0, 1.0), 0.5), 0.0, 1.0);\n",
+        "}\n",
+    );
+
+    let legalized = legalize(ShaderStageKind::Fragment, source);
+    let source = legalized.source();
+
+    assert!(
+        source.contains("vec2 cs = vec2(cos(r), sin(r));"),
+        "{source}"
+    );
+    assert!(!source.contains("vec2 cs = vec3(vec2(cos(r), sin(r)), 0.0);"));
+
+    let artifact = NagaCompiler
+        .compile_stage(ShaderStageKind::Fragment, &legalized)
+        .expect("rotateVec2 helper should preserve vec2 initializer width");
+    assert_eq!(artifact.kind(), ShaderStageKind::Fragment);
+}
+
+#[test]
+fn type_coercion_strategy_does_not_widen_common_header_rotate_vec2_helper() {
+    let source = concat!(
+        "vec3 hsv2rgb(vec3 c) {\n",
+        "    vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);\n",
+        "    vec3 p = abs(frac(c.xxx + K.xyz) * 6.0 - K.www);\n",
+        "    return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);\n",
+        "}\n",
+        "vec2 rotateVec2(vec2 v, float r) {\n",
+        "    vec2 cs = vec2(cos(r), sin(r));\n",
+        "    return vec2(v.x * cs.x - v.y * cs.y, v.x * cs.y + v.y * cs.x);\n",
+        "}\n",
+        "void main() {\n",
+        "    gl_FragColor = vec4(rotateVec2(vec2(0.0, 1.0), 0.5), 0.0, 1.0);\n",
+        "}\n",
+    );
+
+    let legalized = legalize(ShaderStageKind::Fragment, source);
+    let source = legalized.source();
+
+    assert!(
+        source.contains("vec2 cs = vec2(cos(r), sin(r));"),
+        "{source}"
+    );
+    assert!(!source.contains("vec2 cs = vec3(vec2(cos(r), sin(r)), 0.0);"));
+
+    let artifact = NagaCompiler
+        .compile_stage(ShaderStageKind::Fragment, &legalized)
+        .expect("common.h rotateVec2 helper should preserve vec2 initializer width");
+    assert_eq!(artifact.kind(), ShaderStageKind::Fragment);
+}
+
+#[test]
+fn type_coercion_strategy_narrows_vec4_constructor_for_vec3_initializer() {
+    let source = concat!(
+        "void main() {\n",
+        "    vec4 r = vec4(1.0, 0.0, 0.0, 1.0);\n",
+        "    vec4 g = vec4(0.0, 1.0, 0.0, 1.0);\n",
+        "    vec4 b = vec4(0.0, 0.0, 1.0, 1.0);\n",
+        "    vec3 finalColor = vec4(r.r, g.g, b.b, 0.1);\n",
+        "    gl_FragColor = vec4(finalColor, 1.0);\n",
+        "}\n",
+    );
+
+    let legalized = legalize(ShaderStageKind::Fragment, source);
+    let source = legalized.source();
+
+    assert!(source.contains("vec3 finalColor = (vec4(r.r, g.g, b.b, 0.1)).xyz;"));
+
+    let artifact = NagaCompiler
+        .compile_stage(ShaderStageKind::Fragment, &legalized)
+        .expect("vec4 constructor initializer should narrow for vec3 declaration");
+    assert_eq!(artifact.kind(), ShaderStageKind::Fragment);
+}
+
+#[test]
+fn type_coercion_strategy_broadcasts_shadowed_scalar_identifier() {
     let source = concat!(
         "void main() {\n",
         "    vec2 amount = vec2(0.25);\n",
@@ -50,7 +159,7 @@ fn type_coercion_policy_broadcasts_shadowed_scalar_identifier() {
 }
 
 #[test]
-fn type_coercion_policy_broadcasts_scalar_expression_in_vector_max() {
+fn type_coercion_strategy_broadcasts_scalar_expression_in_vector_max() {
     let source = concat!(
         "float luma(vec3 color) {\n",
         "    return dot(color, vec3(0.299, 0.587, 0.114));\n",
@@ -70,7 +179,7 @@ fn type_coercion_policy_broadcasts_scalar_expression_in_vector_max() {
 }
 
 #[test]
-fn type_coercion_policy_broadcasts_scalar_literal_before_swizzled_vector_max() {
+fn type_coercion_strategy_broadcasts_scalar_literal_before_swizzled_vector_max() {
     let source = concat!(
         "void main() {\n",
         "    vec4 albedo = vec4(0.25, 0.5, 0.75, 1.0);\n",
@@ -91,7 +200,82 @@ fn type_coercion_policy_broadcasts_scalar_literal_before_swizzled_vector_max() {
 }
 
 #[test]
-fn type_coercion_policy_broadcasts_scalar_literal_before_swizzled_texture_sample() {
+fn type_coercion_strategy_broadcasts_scalar_literal_before_vector_call_max() {
+    let source = concat!(
+        "void main() {\n",
+        "    vec2 scale = vec2(1.25);\n",
+        "    vec2 factor = max(1, abs(scale));\n",
+        "    gl_FragColor = vec4(factor, 0.0, 1.0);\n",
+        "}\n",
+    );
+
+    let legalized = legalize(ShaderStageKind::Fragment, source);
+    let source = legalized.source();
+
+    assert!(
+        source.contains("vec2 factor = max(vec2(1.0), abs(scale));"),
+        "{source}"
+    );
+    assert!(!source.contains("max(1, abs(scale))"));
+
+    let artifact = NagaCompiler
+        .compile_stage(ShaderStageKind::Fragment, &legalized)
+        .expect("vector max with vector-returning peer should compile through Naga");
+    assert_eq!(artifact.kind(), ShaderStageKind::Fragment);
+}
+
+#[test]
+fn type_coercion_strategy_broadcasts_scalar_literal_before_uniform_vector_call_max() {
+    let source = concat!(
+        "uniform vec2 u_ShadowScale;\n",
+        "void main() {\n",
+        "    vec2 factor = max(1, abs(u_ShadowScale));\n",
+        "    gl_FragColor = vec4(factor, 0.0, 1.0);\n",
+        "}\n",
+    );
+
+    let legalized = legalize(ShaderStageKind::Fragment, source);
+    let source = legalized.source();
+
+    assert!(
+        source.contains("vec2 factor = max(vec2(1.0), abs(u_ShadowScale));"),
+        "{source}"
+    );
+    assert!(!source.contains("max(1, abs(u_ShadowScale))"));
+
+    let artifact = NagaCompiler
+        .compile_stage(ShaderStageKind::Fragment, &legalized)
+        .expect("vector max with top-level vector uniform should compile through Naga");
+    assert_eq!(artifact.kind(), ShaderStageKind::Fragment);
+}
+
+#[test]
+fn type_coercion_strategy_repairs_shadow_antitruncation_factor_initializer() {
+    let source = concat!(
+        "uniform vec2 u_shadowOffset;\n",
+        "uniform vec2 g_ParallaxPosition;\n",
+        "uniform vec2 u_ParallaxScale;\n",
+        "uniform vec2 u_ShadowScale;\n",
+        "void main() {\n",
+        "    float atFactor = (1 + (abs(u_shadowOffset) + abs(g_ParallaxPosition * \
+         u_ParallaxScale)) * 2) * max(1, abs(u_ShadowScale));\n",
+        "    gl_Position = vec4(vec2(atFactor), 0.0, 1.0);\n",
+        "}\n",
+    );
+
+    let legalized = legalize(ShaderStageKind::Vertex, source);
+    let source = legalized.source();
+
+    assert!(!source.contains("max(1, abs(u_ShadowScale))"), "{source}");
+
+    let artifact = NagaCompiler
+        .compile_stage(ShaderStageKind::Vertex, &legalized)
+        .expect("shadow anti-truncation initializer should compile through Naga");
+    assert_eq!(artifact.kind(), ShaderStageKind::Vertex);
+}
+
+#[test]
+fn type_coercion_strategy_broadcasts_scalar_literal_before_swizzled_texture_sample() {
     let source = concat!(
         "uniform sampler2D g_Texture0;\n",
         "varying vec2 v_Uv;\n",
@@ -117,7 +301,624 @@ fn type_coercion_policy_broadcasts_scalar_literal_before_swizzled_texture_sample
 }
 
 #[test]
-fn type_coercion_policy_uses_nearest_vector_width_for_vec3_vec2_widening() {
+fn type_coercion_strategy_swizzles_nested_binary_operand_in_vec2_initializer() {
+    let source = concat!(
+        "void main() {\n",
+        "    vec2 uv = vec2(0.25, 0.5);\n",
+        "    vec3 normal = vec3(0.0, 0.0, 1.0);\n",
+        "    float scale = 0.5;\n",
+        "    vec2 out_uv = uv + normal * scale;\n",
+        "    gl_FragColor = vec4(out_uv, 0.0, 1.0);\n",
+        "}\n",
+    );
+
+    let legalized = legalize(ShaderStageKind::Fragment, source);
+    let source = legalized.source();
+
+    assert!(source.contains("vec2 out_uv = uv + normal.xy * scale;"));
+    assert!(!source.contains("vec2 out_uv = uv + normal * scale;"));
+}
+
+#[test]
+fn type_coercion_strategy_swizzles_nested_binary_operand_in_vec2_assignment() {
+    let source = concat!(
+        "void main() {\n",
+        "    vec2 uv = vec2(0.25, 0.5);\n",
+        "    vec3 normal = vec3(0.0, 0.0, 1.0);\n",
+        "    float scale = 0.5;\n",
+        "    vec2 out_uv = vec2(0.0);\n",
+        "    out_uv = uv + normal * scale;\n",
+        "    gl_FragColor = vec4(out_uv, 0.0, 1.0);\n",
+        "}\n",
+    );
+
+    let legalized = legalize(ShaderStageKind::Fragment, source);
+    let source = legalized.source();
+
+    assert!(source.contains("out_uv = uv + normal.xy * scale;"));
+    assert!(!source.contains("out_uv = uv + normal * scale;"));
+}
+
+#[test]
+fn type_coercion_strategy_uses_nested_vector_call_width_for_max() {
+    let source = concat!(
+        "void main() {\n",
+        "    vec2 scale = vec2(1.0, 1.25);\n",
+        "    float factor = max(1, abs(scale)).x;\n",
+        "    gl_FragColor = vec4(factor);\n",
+        "}\n",
+    );
+
+    let legalized = legalize(ShaderStageKind::Fragment, source);
+    let source = legalized.source();
+
+    assert!(source.contains("float factor = max(vec2(1.0), abs(scale)).x;"));
+    assert!(!source.contains("float factor = max(1, abs(scale)).x;"));
+
+    let artifact = NagaCompiler
+        .compile_stage(ShaderStageKind::Fragment, &legalized)
+        .expect("nested vector-returning max argument should compile through Naga");
+    assert_eq!(artifact.kind(), ShaderStageKind::Fragment);
+}
+
+#[test]
+fn type_coercion_strategy_treats_void_signature_as_zero_argument_vector_return() {
+    let source = concat!(
+        "vec2 amount(void) {\n",
+        "    return vec2(0.25, 0.5);\n",
+        "}\n",
+        "void main() {\n",
+        "    float factor = amount();\n",
+        "    gl_FragColor = vec4(factor);\n",
+        "}\n",
+    );
+
+    let legalized = legalize(ShaderStageKind::Fragment, source);
+    let source = legalized.source();
+
+    assert!(source.contains("float factor = amount().x;"), "{source}");
+    assert!(!source.contains("float factor = amount();"));
+
+    let artifact = NagaCompiler
+        .compile_stage(ShaderStageKind::Fragment, &legalized)
+        .expect("scalar initializer from void-signature vector return should compile");
+    assert_eq!(artifact.kind(), ShaderStageKind::Fragment);
+}
+
+#[test]
+fn texture_sampling_strategy_narrows_vec4_coordinates_for_sampler2d() {
+    let source = concat!(
+        "uniform sampler2D g_Texture0;\n",
+        "varying vec4 v_TexCoord;\n",
+        "void main() {\n",
+        "    vec4 scene = texSample2D(g_Texture0, v_TexCoord);\n",
+        "    gl_FragColor = scene;\n",
+        "}\n",
+    );
+
+    let legalized = legalize(ShaderStageKind::Fragment, source);
+    let source = legalized.source();
+
+    assert!(source.contains(
+        "vec4 scene = texture(sampler2D(g_Texture0, _we_Sampler_g_Texture0), v_TexCoord.xy);"
+    ));
+    assert!(!source.contains("sampler2D(g_Texture0, _we_Sampler_g_Texture0), v_TexCoord);"));
+
+    let artifact = NagaCompiler
+        .compile_stage(ShaderStageKind::Fragment, &legalized)
+        .expect("sampler2D vec4 coordinate should compile after narrowing");
+    assert_eq!(artifact.kind(), ShaderStageKind::Fragment);
+}
+
+#[test]
+fn texture_sampling_strategy_narrows_vector_expression_coordinates_for_sampler2d() {
+    let source = concat!(
+        "uniform sampler2D g_Texture0;\n",
+        "varying vec4 v_TexCoord;\n",
+        "void main() {\n",
+        "    vec4 timer = vec4(0.1);\n",
+        "    vec4 scene = texSample2D(g_Texture0, v_TexCoord.xy - timer);\n",
+        "    gl_FragColor = scene;\n",
+        "}\n",
+    );
+
+    let legalized = legalize(ShaderStageKind::Fragment, source);
+    let source = legalized.source();
+
+    assert!(source.contains(
+        "vec4 scene = texture(sampler2D(g_Texture0, _we_Sampler_g_Texture0), v_TexCoord.xy - \
+         timer.xy);"
+    ));
+    assert!(
+        !source.contains("sampler2D(g_Texture0, _we_Sampler_g_Texture0), v_TexCoord.xy - timer);")
+    );
+
+    let artifact = NagaCompiler
+        .compile_stage(ShaderStageKind::Fragment, &legalized)
+        .expect("sampler2D vector expression coordinate should compile after narrowing");
+    assert_eq!(artifact.kind(), ShaderStageKind::Fragment);
+}
+
+#[test]
+fn texture_sampling_strategy_narrows_each_vec4_coordinate_operand_for_sampler2d() {
+    let source = concat!(
+        "uniform sampler2D g_Texture0;\n",
+        "varying vec4 v_TexCoord;\n",
+        "varying vec4 v_TexOffset;\n",
+        "void main() {\n",
+        "    vec4 scene = texSample2D(g_Texture0, v_TexCoord + v_TexOffset);\n",
+        "    gl_FragColor = scene;\n",
+        "}\n",
+    );
+
+    let legalized = legalize(ShaderStageKind::Fragment, source);
+    let source = legalized.source();
+
+    assert!(source.contains(
+        "vec4 scene = texture(sampler2D(g_Texture0, _we_Sampler_g_Texture0), v_TexCoord.xy + \
+         v_TexOffset.xy);"
+    ));
+    assert!(!source.contains("v_TexCoord.xy + v_TexOffset);"));
+
+    let artifact = NagaCompiler
+        .compile_stage(ShaderStageKind::Fragment, &legalized)
+        .expect("sampler2D vector coordinate operands should compile after narrowing");
+    assert_eq!(artifact.kind(), ShaderStageKind::Fragment);
+}
+
+#[test]
+fn texture_sampling_strategy_narrows_parenthesized_vec4_coordinate_operands_for_sampler2d() {
+    let source = concat!(
+        "uniform sampler2D g_Texture0;\n",
+        "varying vec4 v_TexCoord;\n",
+        "varying vec4 v_TexOffset;\n",
+        "void main() {\n",
+        "    vec4 scene = texSample2D(g_Texture0, (v_TexCoord + v_TexOffset));\n",
+        "    gl_FragColor = scene;\n",
+        "}\n",
+    );
+
+    let legalized = legalize(ShaderStageKind::Fragment, source);
+    let source = legalized.source();
+
+    assert!(source.contains(
+        "vec4 scene = texture(sampler2D(g_Texture0, _we_Sampler_g_Texture0), (v_TexCoord.xy + \
+         v_TexOffset.xy));"
+    ));
+    assert!(!source.contains("(v_TexCoord + v_TexOffset)"));
+
+    let artifact = NagaCompiler
+        .compile_stage(ShaderStageKind::Fragment, &legalized)
+        .expect(
+            "sampler2D parenthesized vector coordinate operands should compile after narrowing",
+        );
+    assert_eq!(artifact.kind(), ShaderStageKind::Fragment);
+}
+
+#[test]
+fn texture_sampling_strategy_wraps_vec4_call_coordinate_operand_for_sampler2d() {
+    let source = concat!(
+        "uniform sampler2D g_Texture0;\n",
+        "varying vec4 v_TexCoord;\n",
+        "varying vec2 v_TexOffset;\n",
+        "void main() {\n",
+        "    vec4 scene = texSample2D(g_Texture0, abs(v_TexCoord) + v_TexOffset);\n",
+        "    gl_FragColor = scene;\n",
+        "}\n",
+    );
+
+    let legalized = legalize(ShaderStageKind::Fragment, source);
+    let source = legalized.source();
+
+    assert!(source.contains(
+        "vec4 scene = texture(sampler2D(g_Texture0, _we_Sampler_g_Texture0), (abs(v_TexCoord)).xy \
+         + v_TexOffset);"
+    ));
+    assert!(!source.contains("abs(v_TexCoord).xy + v_TexOffset"));
+
+    let artifact = NagaCompiler
+        .compile_stage(ShaderStageKind::Fragment, &legalized)
+        .expect("sampler2D vector call coordinate operand should compile after narrowing");
+    assert_eq!(artifact.kind(), ShaderStageKind::Fragment);
+}
+
+#[test]
+fn texture_sampling_strategy_wraps_direct_vec4_call_coordinate_for_sampler2d() {
+    let source = concat!(
+        "uniform sampler2D g_Texture0;\n",
+        "varying vec4 v_TexCoord;\n",
+        "void main() {\n",
+        "    vec4 scene = texSample2D(g_Texture0, abs(v_TexCoord));\n",
+        "    gl_FragColor = scene;\n",
+        "}\n",
+    );
+
+    let legalized = legalize(ShaderStageKind::Fragment, source);
+    let source = legalized.source();
+
+    assert!(source.contains(
+        "vec4 scene = texture(sampler2D(g_Texture0, _we_Sampler_g_Texture0), \
+         (abs(v_TexCoord)).xy);"
+    ));
+    assert!(!source.contains("abs(v_TexCoord).xy"));
+
+    let artifact = NagaCompiler
+        .compile_stage(ShaderStageKind::Fragment, &legalized)
+        .expect("sampler2D direct vector call coordinate should compile after narrowing");
+    assert_eq!(artifact.kind(), ShaderStageKind::Fragment);
+}
+
+#[test]
+fn texture_sampling_strategy_narrows_vector_binary_inside_call_coordinate_for_sampler2d() {
+    let source = concat!(
+        "uniform sampler2D g_Texture0;\n",
+        "varying vec4 v_TexCoord;\n",
+        "varying vec4 v_TexOffset;\n",
+        "void main() {\n",
+        "    vec4 scene = texSample2D(g_Texture0, abs(v_TexCoord + v_TexOffset));\n",
+        "    gl_FragColor = scene;\n",
+        "}\n",
+    );
+
+    let legalized = legalize(ShaderStageKind::Fragment, source);
+    let source = legalized.source();
+
+    assert!(source.contains(
+        "vec4 scene = texture(sampler2D(g_Texture0, _we_Sampler_g_Texture0), (abs(v_TexCoord + \
+         v_TexOffset)).xy);"
+    ));
+    assert!(!source.contains(
+        "texture(sampler2D(g_Texture0, _we_Sampler_g_Texture0), abs(v_TexCoord + v_TexOffset));"
+    ));
+
+    let artifact = NagaCompiler
+        .compile_stage(ShaderStageKind::Fragment, &legalized)
+        .expect("sampler2D vector binary inside call coordinate should compile after narrowing");
+    assert_eq!(artifact.kind(), ShaderStageKind::Fragment);
+}
+
+#[test]
+fn texture_sampling_strategy_narrows_parenthesized_vector_inside_call_coordinate_for_sampler2d() {
+    let source = concat!(
+        "uniform sampler2D g_Texture0;\n",
+        "varying vec4 v_TexCoord;\n",
+        "void main() {\n",
+        "    vec4 scene = texSample2D(g_Texture0, abs((v_TexCoord)));\n",
+        "    gl_FragColor = scene;\n",
+        "}\n",
+    );
+
+    let legalized = legalize(ShaderStageKind::Fragment, source);
+    let source = legalized.source();
+
+    assert!(source.contains(
+        "vec4 scene = texture(sampler2D(g_Texture0, _we_Sampler_g_Texture0), \
+         (abs((v_TexCoord))).xy);"
+    ));
+    assert!(
+        !source
+            .contains("texture(sampler2D(g_Texture0, _we_Sampler_g_Texture0), abs((v_TexCoord)));")
+    );
+
+    let artifact = NagaCompiler
+        .compile_stage(ShaderStageKind::Fragment, &legalized)
+        .expect(
+            "sampler2D parenthesized vector inside call coordinate should compile after narrowing",
+        );
+    assert_eq!(artifact.kind(), ShaderStageKind::Fragment);
+}
+
+#[test]
+fn type_coercion_strategy_selects_scalar_component_from_vector_expression_initializer() {
+    let source = concat!(
+        "void main() {\n",
+        "    vec2 shadow_scale = vec2(1.0, 1.25);\n",
+        "    float at_factor = 2.0 * max(1, abs(shadow_scale));\n",
+        "    gl_FragColor = vec4(at_factor);\n",
+        "}\n",
+    );
+
+    let legalized = legalize(ShaderStageKind::Fragment, source);
+    let source = legalized.source();
+
+    assert!(source.contains("float at_factor = (2.0 * max(vec2(1.0), abs(shadow_scale))).x;"));
+    assert!(!source.contains("float at_factor = 2.0 * max(vec2(1.0), abs(shadow_scale));"));
+
+    let artifact = NagaCompiler
+        .compile_stage(ShaderStageKind::Fragment, &legalized)
+        .expect("scalar initializer from vector expression should compile through Naga");
+    assert_eq!(artifact.kind(), ShaderStageKind::Fragment);
+}
+
+#[test]
+fn type_coercion_strategy_keeps_binary_expression_width_after_vector_builtin_call() {
+    let source = concat!(
+        "void main() {\n",
+        "    vec2 scale = vec2(1.0, 1.25);\n",
+        "    float factor = max(1, abs(scale)) * (2.0);\n",
+        "    gl_FragColor = vec4(factor);\n",
+        "}\n",
+    );
+
+    let legalized = legalize(ShaderStageKind::Fragment, source);
+    let source = legalized.source();
+
+    assert!(
+        source.contains("float factor = (max(vec2(1.0), abs(scale)) * (2.0)).x;"),
+        "{source}"
+    );
+    assert!(!source.contains("float factor = max(vec2(1.0), abs(scale)) * (2.0);"));
+
+    let artifact = NagaCompiler
+        .compile_stage(ShaderStageKind::Fragment, &legalized)
+        .expect("scalar initializer from vector call binary expression should compile");
+    assert_eq!(artifact.kind(), ShaderStageKind::Fragment);
+}
+
+#[test]
+fn texture_sampling_strategy_narrows_vec3_coordinates_for_sampler2d() {
+    let source = concat!(
+        "uniform sampler2D g_Texture0;\n",
+        "varying vec3 uv3;\n",
+        "void main() {\n",
+        "    vec4 scene = texSample2D(g_Texture0, uv3);\n",
+        "    gl_FragColor = scene;\n",
+        "}\n",
+    );
+
+    let legalized = legalize(ShaderStageKind::Fragment, source);
+    let source = legalized.source();
+
+    assert!(
+        source.contains(
+            "vec4 scene = texture(sampler2D(g_Texture0, _we_Sampler_g_Texture0), uv3.xy);"
+        )
+    );
+    assert!(!source.contains("sampler2D(g_Texture0, _we_Sampler_g_Texture0), uv3);"));
+
+    let artifact = NagaCompiler
+        .compile_stage(ShaderStageKind::Fragment, &legalized)
+        .expect("sampler2D vec3 coordinate should compile after narrowing");
+    assert_eq!(artifact.kind(), ShaderStageKind::Fragment);
+}
+
+#[test]
+fn type_coercion_strategy_uses_overload_signature_for_scalar_call_assignment() {
+    let source = concat!(
+        "float choose(float value) {\n",
+        "    return value;\n",
+        "}\n",
+        "vec4 choose(vec4 value) {\n",
+        "    return value;\n",
+        "}\n",
+        "void main() {\n",
+        "    vec4 color = vec4(0.25);\n",
+        "    float time = 1.0;\n",
+        "    color += choose(time);\n",
+        "    gl_FragColor = color;\n",
+        "}\n",
+    );
+
+    let legalized = legalize(ShaderStageKind::Fragment, source);
+    let source = legalized.source();
+
+    assert!(source.contains("color += vec4(choose(time));"), "{source}");
+    assert!(!source.contains("color += choose(time);"));
+
+    let artifact = NagaCompiler
+        .compile_stage(ShaderStageKind::Fragment, &legalized)
+        .expect("scalar overload call compound assignment should compile after wrapping");
+    assert_eq!(artifact.kind(), ShaderStageKind::Fragment);
+}
+
+#[test]
+fn type_coercion_strategy_avoids_wrapping_conflicting_overload_return_evidence() {
+    let source = concat!(
+        "float choose(float value) {\n",
+        "    return value;\n",
+        "}\n",
+        "vec4 choose(float value) {\n",
+        "    return vec4(value);\n",
+        "}\n",
+        "void main() {\n",
+        "    vec4 color = vec4(0.25);\n",
+        "    float time = 1.0;\n",
+        "    color += choose(time);\n",
+        "    gl_FragColor = color;\n",
+        "}\n",
+    );
+
+    let legalized = legalize(ShaderStageKind::Fragment, source);
+    let source = legalized.source();
+
+    assert!(source.contains("color += choose(time);"), "{source}");
+    assert!(!source.contains("color += vec4(choose(time));"));
+}
+
+#[test]
+fn type_coercion_strategy_broadcasts_scalar_compound_assignment_to_vector_lhs() {
+    let source = concat!(
+        "void main() {\n",
+        "    vec4 uv = vec4(0.25);\n",
+        "    float time = 1.0;\n",
+        "    uv += time * 0.5;\n",
+        "    gl_FragColor = uv;\n",
+        "}\n",
+    );
+
+    let legalized = legalize(ShaderStageKind::Fragment, source);
+    let source = legalized.source();
+
+    assert!(source.contains("uv += vec4(time * 0.5);"));
+    assert!(!source.contains("uv += time * 0.5;"));
+
+    let artifact = NagaCompiler
+        .compile_stage(ShaderStageKind::Fragment, &legalized)
+        .expect("scalar compound assignment to vector lhs should compile through Naga");
+    assert_eq!(artifact.kind(), ShaderStageKind::Fragment);
+}
+
+#[test]
+fn type_coercion_strategy_broadcasts_scalar_call_compound_assignment_to_vector_lhs() {
+    let source = concat!(
+        "float amount(float value) {\n",
+        "    return sin(value);\n",
+        "}\n",
+        "void main() {\n",
+        "    vec4 uv = vec4(0.25);\n",
+        "    float time = 1.0;\n",
+        "    uv += amount(time);\n",
+        "    gl_FragColor = uv;\n",
+        "}\n",
+    );
+
+    let legalized = legalize(ShaderStageKind::Fragment, source);
+    let source = legalized.source();
+
+    assert!(source.contains("uv += vec4(amount(time));"));
+    assert!(!source.contains("uv += amount(time);"));
+
+    let artifact = NagaCompiler
+        .compile_stage(ShaderStageKind::Fragment, &legalized)
+        .expect("scalar call compound assignment to vector lhs should compile through Naga");
+    assert_eq!(artifact.kind(), ShaderStageKind::Fragment);
+}
+
+#[test]
+fn type_coercion_strategy_preserves_vector_call_compound_assignment_to_vector_lhs() {
+    let source = concat!(
+        "vec4 amount(float value) {\n",
+        "    return vec4(value);\n",
+        "}\n",
+        "void main() {\n",
+        "    vec4 uv = vec4(0.25);\n",
+        "    float time = 1.0;\n",
+        "    uv += amount(time);\n",
+        "    gl_FragColor = uv;\n",
+        "}\n",
+    );
+
+    let legalized = legalize(ShaderStageKind::Fragment, source);
+    let source = legalized.source();
+
+    assert!(source.contains("uv += amount(time);"));
+    assert!(!source.contains("uv += vec4(amount(time));"));
+
+    let artifact = NagaCompiler
+        .compile_stage(ShaderStageKind::Fragment, &legalized)
+        .expect("vector-returning call compound assignment should compile without scalar wrapping");
+    assert_eq!(artifact.kind(), ShaderStageKind::Fragment);
+}
+
+#[test]
+fn type_coercion_strategy_preserves_vector_call_expression_compound_assignment_to_vector_lhs() {
+    let source = concat!(
+        "vec4 amount(float value) {\n",
+        "    return vec4(value);\n",
+        "}\n",
+        "void main() {\n",
+        "    vec4 uv = vec4(0.25);\n",
+        "    float time = 1.0;\n",
+        "    uv += amount(time) * 0.5;\n",
+        "    gl_FragColor = uv;\n",
+        "}\n",
+    );
+
+    let legalized = legalize(ShaderStageKind::Fragment, source);
+    let source = legalized.source();
+
+    assert!(source.contains("uv += amount(time) * 0.5;"));
+    assert!(!source.contains("uv += vec4(amount(time) * 0.5);"));
+
+    let artifact = NagaCompiler
+        .compile_stage(ShaderStageKind::Fragment, &legalized)
+        .expect(
+            "vector-returning call expression compound assignment should compile without scalar \
+             wrapping",
+        );
+    assert_eq!(artifact.kind(), ShaderStageKind::Fragment);
+}
+
+#[test]
+fn type_coercion_strategy_preserves_texture_query_lod_compound_assignment_to_vector_lhs() {
+    let source = concat!(
+        "uniform sampler2D g_Texture0;\n",
+        "void main() {\n",
+        "    vec2 uv = vec2(0.25);\n",
+        "    uv += textureQueryLod(sampler2D(g_Texture0, _we_Sampler_g_Texture0), uv) * 0.5;\n",
+        "    gl_FragColor = vec4(uv, 0.0, 1.0);\n",
+        "}\n",
+    );
+
+    let legalized = legalize(ShaderStageKind::Fragment, source);
+    let source = legalized.source();
+
+    assert!(source.contains(
+        "uv += textureQueryLod(sampler2D(g_Texture0, _we_Sampler_g_Texture0), uv) * 0.5;"
+    ));
+    assert!(!source.contains(
+        "uv += vec2(textureQueryLod(sampler2D(g_Texture0, _we_Sampler_g_Texture0), uv) * 0.5);"
+    ));
+}
+
+#[test]
+fn type_coercion_strategy_uses_texture_query_levels_as_scalar_evidence_only() {
+    let source = concat!(
+        "uniform sampler2D g_Texture0;\n",
+        "void main() {\n",
+        "    vec2 uv = vec2(0.25);\n",
+        "    uv += textureQueryLevels(sampler2D(g_Texture0, _we_Sampler_g_Texture0)) * 2;\n",
+        "    uv += textureQueryLod(sampler2D(g_Texture0, _we_Sampler_g_Texture0), uv) * 0.5;\n",
+        "    uv += textureSize(sampler2D(g_Texture0, _we_Sampler_g_Texture0), 0) / 2;\n",
+        "    gl_FragColor = vec4(uv, 0.0, 1.0);\n",
+        "}\n",
+    );
+
+    let legalized = legalize(ShaderStageKind::Fragment, source);
+    let source = legalized.source();
+
+    assert!(source.contains(
+        "uv += vec2(textureQueryLevels(sampler2D(g_Texture0, _we_Sampler_g_Texture0)) * 2);"
+    ));
+    assert!(source.contains(
+        "uv += textureQueryLod(sampler2D(g_Texture0, _we_Sampler_g_Texture0), uv) * 0.5;"
+    ));
+    assert!(
+        source.contains("uv += textureSize(sampler2D(g_Texture0, _we_Sampler_g_Texture0), 0) / 2;")
+    );
+    assert!(!source.contains(
+        "uv += vec2(textureQueryLod(sampler2D(g_Texture0, _we_Sampler_g_Texture0), uv) * 0.5);"
+    ));
+    assert!(!source.contains(
+        "uv += vec2(textureSize(sampler2D(g_Texture0, _we_Sampler_g_Texture0), 0) / 2);"
+    ));
+}
+
+#[test]
+fn type_coercion_strategy_preserves_texture_size_expression_compound_assignment_to_vector_lhs() {
+    let source = concat!(
+        "uniform sampler2D g_Texture0;\n",
+        "void main() {\n",
+        "    ivec2 size = ivec2(0);\n",
+        "    size += textureSize(sampler2D(g_Texture0, _we_Sampler_g_Texture0), 0) / 2;\n",
+        "    gl_FragColor = vec4(vec2(size), 0.0, 1.0);\n",
+        "}\n",
+    );
+
+    let legalized = legalize(ShaderStageKind::Fragment, source);
+    let source = legalized.source();
+
+    assert!(
+        source
+            .contains("size += textureSize(sampler2D(g_Texture0, _we_Sampler_g_Texture0), 0) / 2;")
+    );
+    assert!(!source.contains(
+        "size += vec2(textureSize(sampler2D(g_Texture0, _we_Sampler_g_Texture0), 0) / 2);"
+    ));
+}
+
+#[test]
+fn type_coercion_strategy_uses_nearest_vector_width_for_vec3_vec2_widening() {
     let source = concat!(
         "void main() {\n",
         "    vec3 base = vec3(1.0);\n",
@@ -140,7 +941,7 @@ fn type_coercion_policy_uses_nearest_vector_width_for_vec3_vec2_widening() {
 }
 
 #[test]
-fn type_coercion_policy_stops_vec3_vec2_widening_at_aggregate_local_blocker() {
+fn type_coercion_strategy_stops_vec3_vec2_widening_at_aggregate_local_blocker() {
     let source = concat!(
         "void main() {\n",
         "    vec3 base = vec3(1.0);\n",
@@ -163,7 +964,7 @@ fn type_coercion_policy_stops_vec3_vec2_widening_at_aggregate_local_blocker() {
 }
 
 #[test]
-fn type_coercion_policy_stops_builtin_scalar_broadcast_at_aggregate_local_blocker() {
+fn type_coercion_strategy_stops_builtin_scalar_broadcast_at_aggregate_local_blocker() {
     let source = concat!(
         "void main() {\n",
         "    vec2 amount = vec2(0.25);\n",
@@ -184,7 +985,7 @@ fn type_coercion_policy_stops_builtin_scalar_broadcast_at_aggregate_local_blocke
 }
 
 #[test]
-fn type_coercion_policy_stops_vec3_vec2_widening_at_aggregate_parameter_blocker() {
+fn type_coercion_strategy_stops_vec3_vec2_widening_at_aggregate_parameter_blocker() {
     let source = concat!(
         "vec3 base = vec3(1.0);\n",
         "vec3 helper(ivec3 base) {\n",
@@ -205,7 +1006,7 @@ fn type_coercion_policy_stops_vec3_vec2_widening_at_aggregate_parameter_blocker(
 }
 
 #[test]
-fn type_coercion_policy_tracks_common_aggregate_blocker_spellings() {
+fn type_coercion_strategy_tracks_common_aggregate_blocker_spellings() {
     let source = concat!(
         "void main() {\n",
         "    vec3 u_shadow = vec3(1.0);\n",
@@ -241,7 +1042,7 @@ fn type_coercion_policy_tracks_common_aggregate_blocker_spellings() {
 }
 
 #[test]
-fn control_flow_policy_casts_integer_for_loop_bounds() {
+fn control_flow_strategy_casts_integer_for_loop_bounds() {
     let source = concat!(
         "#define RESOLUTION 64\n",
         "void main() {\n",
@@ -259,7 +1060,7 @@ fn control_flow_policy_casts_integer_for_loop_bounds() {
 }
 
 #[test]
-fn control_flow_policy_casts_integer_for_loop_inclusive_bounds() {
+fn control_flow_strategy_casts_integer_for_loop_inclusive_bounds() {
     let source = concat!(
         "#define MIN_RESOLUTION 0\n",
         "#define MAX_RESOLUTION 64\n",
@@ -284,7 +1085,7 @@ fn control_flow_policy_casts_integer_for_loop_inclusive_bounds() {
 }
 
 #[test]
-fn control_flow_policy_does_not_cast_float_for_loop_bounds() {
+fn control_flow_strategy_does_not_cast_float_for_loop_bounds() {
     let source = concat!(
         "void main() {\n",
         "    float sum = 0.0;\n",
@@ -303,7 +1104,7 @@ fn control_flow_policy_does_not_cast_float_for_loop_bounds() {
 }
 
 #[test]
-fn control_flow_policy_uses_nearest_binding_for_bool_coercion() {
+fn control_flow_strategy_uses_nearest_binding_for_bool_coercion() {
     let source = concat!(
         "void main() {\n",
         "    bool enabled = true;\n",
@@ -330,7 +1131,7 @@ fn control_flow_policy_uses_nearest_binding_for_bool_coercion() {
 }
 
 #[test]
-fn control_flow_policy_tracks_bool_comma_declarators() {
+fn control_flow_strategy_tracks_bool_comma_declarators() {
     let source = concat!(
         "void main() {\n",
         "    bool a = true, b = false;\n",
@@ -347,7 +1148,7 @@ fn control_flow_policy_tracks_bool_comma_declarators() {
 }
 
 #[test]
-fn control_flow_policy_tracks_comment_separated_bool_declarations() {
+fn control_flow_strategy_tracks_comment_separated_bool_declarations() {
     let source = concat!(
         "void main() {\n",
         "    bool /*name*/ enabled = true;\n",
@@ -364,7 +1165,7 @@ fn control_flow_policy_tracks_comment_separated_bool_declarations() {
 }
 
 #[test]
-fn control_flow_policy_ignores_function_prototype_parameters() {
+fn control_flow_strategy_ignores_function_prototype_parameters() {
     let source = concat!(
         "float proto_flag;\n",
         "float header_flag;\n",
@@ -387,7 +1188,7 @@ fn control_flow_policy_ignores_function_prototype_parameters() {
 }
 
 #[test]
-fn control_flow_policy_tracks_function_body_bool_parameters() {
+fn control_flow_strategy_tracks_function_body_bool_parameters() {
     let source = concat!(
         "bool helper(bool enabled) {\n",
         "    float x = enabled;\n",
@@ -405,7 +1206,7 @@ fn control_flow_policy_tracks_function_body_bool_parameters() {
 }
 
 #[test]
-fn control_flow_policy_uses_type_appropriate_numeric_condition_zero_literals() {
+fn control_flow_strategy_uses_type_appropriate_numeric_condition_zero_literals() {
     let source = concat!(
         "void main() {\n",
         "    float f = 1.0;\n",
@@ -436,7 +1237,7 @@ fn control_flow_policy_uses_type_appropriate_numeric_condition_zero_literals() {
 }
 
 #[test]
-fn control_flow_policy_uses_unsigned_zero_for_unsigned_arithmetic_conditions() {
+fn control_flow_strategy_uses_unsigned_zero_for_unsigned_arithmetic_conditions() {
     let source = concat!(
         "void main() {\n",
         "    float f = 1.0;\n",
@@ -460,7 +1261,7 @@ fn control_flow_policy_uses_unsigned_zero_for_unsigned_arithmetic_conditions() {
 }
 
 #[test]
-fn control_flow_policy_leaves_mixed_signedness_arithmetic_conditions_unrewritten() {
+fn control_flow_strategy_leaves_mixed_signedness_arithmetic_conditions_unrewritten() {
     let source = concat!(
         "void main() {\n",
         "    float f = 1.0;\n",

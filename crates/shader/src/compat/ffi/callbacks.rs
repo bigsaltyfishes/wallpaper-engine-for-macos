@@ -10,11 +10,11 @@ use crate::{IncludePath, ShaderError};
 
 /// Source provider backed by a C include callback.
 #[derive(Clone, Copy, Debug)]
-pub(in crate::compat::ffi) struct CallbackSourceProvider {
+pub(super) struct CallbackSourceProvider {
     /// Optional include callback.
-    pub(in crate::compat::ffi) callback: Option<RsShaderIncludeCallback>,
+    pub(super) callback: Option<RsShaderIncludeCallback>,
     /// Opaque callback user data.
-    pub(in crate::compat::ffi) user_data: *mut c_void,
+    pub(super) user_data: *mut c_void,
 }
 
 impl crate::ShaderSourceProvider for CallbackSourceProvider {
@@ -34,7 +34,7 @@ impl crate::ShaderSourceProvider for CallbackSourceProvider {
 
 /// RAII owner for bytes returned by a C include callback.
 #[derive(Debug)]
-pub(in crate::compat::ffi) struct CallbackBytes {
+struct CallbackBytes {
     /// Include path associated with these bytes.
     path: IncludePath,
     /// Raw callback bytes and free callback.

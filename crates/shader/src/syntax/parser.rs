@@ -1,23 +1,27 @@
 //! Cursor-based syntax parser implementation.
 
+use smol_str::SmolStr;
+
 use super::{
-    FunctionDecl, ParsingContext, PreprocessorDirective, ShaderAnnotation, ShaderDeclaration,
-    ShaderModule, SyntaxItem, TopLevelQualifier,
-    declaration::{DeclarationArraySuffix, DeclarationKind, DeclarationLayout},
+    FunctionDecl, FunctionDeclSpans, ParsingContext, PreprocessorDirective, ShaderAnnotation,
+    ShaderDeclaration, ShaderModule, SyntaxItem, TopLevelQualifier,
+    declaration::{
+        DeclarationArraySize, DeclarationArraySuffix, DeclarationKind, DeclarationLayout,
+    },
 };
 use crate::{
     ShaderDiagnostic, ShaderResult, SourceSpan,
-    lexer::{Token, TokenKind},
+    tokenizer::{KeywordType, LiteralValue, TokenCursor, TokenStream, TypedToken},
 };
 
 /// Cursor-based parser over the borrowed token stream for one source.
 pub(super) struct Parser<'context, 'src> {
     /// Owning parse context that provides stage, source, and token storage.
-    pub(super) context: &'context ParsingContext<'src>,
+    pub context: &'context ParsingContext<'src>,
     /// Borrowed tokens being parsed in source order.
-    pub(super) tokens: &'context [Token<'src>],
+    pub tokens: TokenCursor<'context>,
     /// Current token offset within `tokens`.
-    pub(super) cursor: usize,
+    pub cursor: usize,
 }
 
 impl<'src> Parser<'_, 'src> {
@@ -34,36 +38,36 @@ impl<'src> Parser<'_, 'src> {
         Ok(ShaderModule::new(
             self.context.stage(),
             self.context.source(),
-            self.context.tokens().to_vec(),
+            TokenStream::new(self.context.token_stream().clone().into_owned()),
             items,
         ))
     }
 
     /// Parses the next top-level token sequence into a syntax item.
     fn parse_next_item(&mut self) -> ShaderResult<Option<SyntaxItem<'src>>> {
-        let token = self.tokens[self.cursor];
-        match token.kind {
-            TokenKind::Annotation(text) => {
+        let token = &self.tokens[self.cursor];
+        match token.kind() {
+            TypedToken::Annotation(_) => {
+                let text = self.context.slice(token.span());
                 self.cursor += 1;
                 Ok(Some(SyntaxItem::Annotation(
-                    ShaderAnnotation::from_token_text(text, token.span),
+                    ShaderAnnotation::from_token_text(text, token.span()),
                 )))
             }
-            TokenKind::Directive(text) => {
+            TypedToken::Directive(_) => {
+                let text = self.context.slice(token.span());
                 self.cursor += 1;
                 Ok(Some(SyntaxItem::Directive(
-                    PreprocessorDirective::from_token_text(text, token.span),
+                    PreprocessorDirective::from_token_text(text, token.span()),
                 )))
             }
-            TokenKind::Comment(_) => {
-                self.cursor += 1;
-                Ok(None)
+            TypedToken::Keyword(KeywordType::Struct) => self.parse_struct_declaration(),
+            TypedToken::Identifier(_) | TypedToken::Keyword(_) | TypedToken::TypeMark(_) => {
+                self.parse_identifier_item()
             }
-            TokenKind::Identifier("struct") => self.parse_struct_declaration(),
-            TokenKind::Identifier(_) => self.parse_identifier_item(),
             _ => {
                 self.cursor += 1;
-                Ok(Some(SyntaxItem::Opaque(token.span)))
+                Ok(Some(SyntaxItem::Opaque(token.span())))
             }
         }
     }
@@ -93,11 +97,12 @@ impl<'src> Parser<'_, 'src> {
             return Ok(None);
         };
 
-        let name_token = self.tokens[name_index];
-        let return_type_token = self.tokens[return_type_index];
-        let (TokenKind::Identifier(name), TokenKind::Identifier(return_type)) =
-            (name_token.kind, return_type_token.kind)
-        else {
+        let name_token = &self.tokens[name_index];
+        let return_type_token = &self.tokens[return_type_index];
+        let Some(name) = name_token.kind().identifier_text() else {
+            return Ok(None);
+        };
+        let Some(return_type) = return_type_token.kind().source_text() else {
             return Ok(None);
         };
 
@@ -105,37 +110,42 @@ impl<'src> Parser<'_, 'src> {
         let Some(body_open) = self.next_non_comment(close_paren + 1) else {
             return Ok(None);
         };
-        if !matches!(self.tokens[body_open].kind, TokenKind::LeftBrace) {
+        if !matches!(self.tokens[body_open].kind(), TypedToken::LeftBrace) {
             return Ok(None);
         }
 
         let body_close = self.find_matching_brace(body_open)?;
         let signature = SourceSpan::new(
-            self.tokens[start].span.start(),
-            self.tokens[close_paren].span.end(),
+            self.tokens[start].span().start(),
+            self.tokens[close_paren].span().end(),
         )?;
         let parameters = SourceSpan::new(
-            self.tokens[open_paren].span.end(),
-            self.tokens[close_paren].span.start(),
+            self.tokens[open_paren].span().end(),
+            self.tokens[close_paren].span().start(),
         )?;
+        let parameter_facts = FunctionDecl::parse_parameters(self.tokens, open_paren, close_paren);
         let body = SourceSpan::new(
-            self.tokens[body_open].span.start(),
-            self.tokens[body_close].span.end(),
+            self.tokens[body_open].span().start(),
+            self.tokens[body_close].span().end(),
         )?;
         let span = SourceSpan::new(
-            self.tokens[start].span.start(),
-            self.tokens[body_close].span.end(),
+            self.tokens[start].span().start(),
+            self.tokens[body_close].span().end(),
         )?;
 
         self.cursor = body_close + 1;
 
-        Ok(Some(FunctionDecl::new(
+        Ok(Some(FunctionDecl::with_spans(
             return_type,
             name,
-            parameters,
-            signature,
-            body,
-            span,
+            FunctionDeclSpans {
+                name: name_token.span(),
+                parameters,
+                signature,
+                body,
+                span,
+            },
+            parameter_facts,
         )))
     }
 
@@ -145,15 +155,15 @@ impl<'src> Parser<'_, 'src> {
         let mut end = start;
 
         while end < self.tokens.len() {
-            if matches!(self.tokens[end].kind, TokenKind::Semicolon) {
+            if matches!(self.tokens[end].kind(), TypedToken::Semicolon) {
                 let declaration = self.declaration_from_range(start, end)?;
                 self.cursor = end + 1;
                 return Ok(declaration);
             }
 
             if matches!(
-                self.tokens[end].kind,
-                TokenKind::LeftBrace | TokenKind::RightBrace
+                self.tokens[end].kind(),
+                TypedToken::LeftBrace | TypedToken::RightBrace
             ) {
                 break;
             }
@@ -166,10 +176,13 @@ impl<'src> Parser<'_, 'src> {
             DeclarationKind::Other,
             None,
             None,
-            self.tokens[start].kind.identifier_text(),
+            self.tokens[start]
+                .kind()
+                .identifier_text()
+                .map(SmolStr::new),
             None,
             None,
-            self.tokens[start].span,
+            self.tokens[start].span(),
         ))
     }
 
@@ -195,8 +208,8 @@ impl<'src> Parser<'_, 'src> {
             head.array_suffix,
             head.layout,
             SourceSpan::new(
-                self.tokens[start].span.start(),
-                self.tokens[semicolon].span.end(),
+                self.tokens[start].span().start(),
+                self.tokens[semicolon].span().end(),
             )?,
         ))
     }
@@ -207,7 +220,8 @@ impl<'src> Parser<'_, 'src> {
         let name = self
             .tokens
             .get(start + 1)
-            .and_then(|token| token.kind.identifier_text());
+            .and_then(|token| token.kind().identifier_text())
+            .map(SmolStr::new);
         let Some(open_brace) = self.find_token(start, TokenKindMatcher::LeftBrace) else {
             return Ok(Some(SyntaxItem::Declaration(
                 self.parse_semicolon_declaration()?,
@@ -218,7 +232,7 @@ impl<'src> Parser<'_, 'src> {
         let semicolon = if self
             .tokens
             .get(close_brace + 1)
-            .is_some_and(|token| matches!(token.kind, TokenKind::Semicolon))
+            .is_some_and(|token| matches!(token.kind(), TypedToken::Semicolon))
         {
             close_brace + 1
         } else {
@@ -226,8 +240,8 @@ impl<'src> Parser<'_, 'src> {
         };
 
         let span = SourceSpan::new(
-            self.tokens[start].span.start(),
-            self.tokens[semicolon].span.end(),
+            self.tokens[start].span().start(),
+            self.tokens[semicolon].span().end(),
         )?;
         self.cursor = semicolon + 1;
 
@@ -247,9 +261,11 @@ impl<'src> Parser<'_, 'src> {
     fn find_top_level_left_paren_before_terminator(&self, start: usize) -> Option<usize> {
         let mut index = start;
         while index < self.tokens.len() {
-            match self.tokens[index].kind {
-                TokenKind::LeftParen => return Some(index),
-                TokenKind::Semicolon | TokenKind::LeftBrace | TokenKind::RightBrace => return None,
+            match self.tokens[index].kind() {
+                kind if kind.is_left_paren() => return Some(index),
+                TypedToken::Semicolon | TypedToken::LeftBrace | TypedToken::RightBrace => {
+                    return None;
+                }
                 _ => index += 1,
             }
         }
@@ -258,21 +274,12 @@ impl<'src> Parser<'_, 'src> {
 
     /// Finds the previous non-comment token before `before`.
     fn previous_non_comment(&self, before: usize) -> Option<usize> {
-        self.tokens
-            .iter()
-            .take(before)
-            .enumerate()
-            .rev()
-            .find_map(|(index, token)| (!token.kind.is_comment()).then_some(index))
+        self.tokens.previous_non_comment(before)
     }
 
     /// Finds the next non-comment token at or after `start`.
     fn next_non_comment(&self, start: usize) -> Option<usize> {
-        self.tokens
-            .iter()
-            .enumerate()
-            .skip(start)
-            .find_map(|(index, token)| (!token.kind.is_comment()).then_some(index))
+        self.tokens.next_non_comment(start)
     }
 
     /// Extracts the qualifier, type name, and identifier from a declaration
@@ -281,49 +288,60 @@ impl<'src> Parser<'_, 'src> {
         let mut index = start;
         let mut qualifier = None;
         let mut layout = None;
+        let mut binding_layout = None;
         let mut type_name = None;
         let mut name = None;
 
         while index < semicolon {
-            match self.tokens[index].kind {
-                TokenKind::Identifier("layout") => {
+            match self.tokens[index].kind() {
+                kind if kind.is_keyword(KeywordType::Layout) => {
                     let layout_end = self.skip_layout_qualifier(index, semicolon);
-                    layout = self.layout_qualifier(index, layout_end);
+                    let parsed_layout = self.layout_qualifier(index, layout_end);
+                    if binding_layout.is_none()
+                        && parsed_layout.is_some_and(|layout| layout.binding().is_some())
+                    {
+                        binding_layout = parsed_layout;
+                    }
+                    layout = parsed_layout;
                     index = layout_end;
                     continue;
                 }
-                TokenKind::Identifier("uniform") if qualifier.is_none() => {
+                kind if kind.is_keyword(KeywordType::Uniform) && qualifier.is_none() => {
                     qualifier = Some(TopLevelQualifier::Uniform);
                 }
-                TokenKind::Identifier("attribute") if qualifier.is_none() => {
+                kind if kind.is_keyword(KeywordType::Attribute) && qualifier.is_none() => {
                     qualifier = Some(TopLevelQualifier::Attribute);
                 }
-                TokenKind::Identifier("varying") if qualifier.is_none() => {
+                kind if kind.is_keyword(KeywordType::Varying) && qualifier.is_none() => {
                     qualifier = Some(TopLevelQualifier::Varying);
                 }
-                TokenKind::Identifier("in") if qualifier.is_none() => {
+                kind if kind.is_keyword(KeywordType::In) && qualifier.is_none() => {
                     qualifier = Some(TopLevelQualifier::In);
                 }
-                TokenKind::Identifier("out") if qualifier.is_none() => {
+                kind if kind.is_keyword(KeywordType::Out) && qualifier.is_none() => {
                     qualifier = Some(TopLevelQualifier::Out);
                 }
-                TokenKind::Identifier(text)
-                    if qualifier.is_none()
-                        && !self.tokens[index].kind.is_declaration_modifier() =>
+                kind if qualifier.is_none()
+                    && kind.source_text().is_some()
+                    && !kind.is_declaration_modifier() =>
                 {
-                    type_name = Some(text);
+                    type_name = kind.source_text().map(SmolStr::new);
                 }
-                TokenKind::Identifier(text) => {
-                    if self.tokens[index].kind.is_declaration_modifier() {
+                kind if kind.source_text().is_some() => {
+                    if kind.is_declaration_modifier() {
                         // Skip precision/interpolation/auxiliary qualifiers.
                     } else if type_name.is_none() {
-                        type_name = Some(text);
+                        type_name = kind.source_text().map(SmolStr::new);
                     } else {
-                        name = Some(text);
+                        name = kind.source_text().map(SmolStr::new);
                         break;
                     }
                 }
-                TokenKind::Punctuation('=') | TokenKind::LeftBrace | TokenKind::Comma => break,
+                kind if kind.is_simple_assignment_operator()
+                    || matches!(kind, TypedToken::LeftBrace | TypedToken::Comma) =>
+                {
+                    break;
+                }
                 _ => {}
             }
 
@@ -332,10 +350,12 @@ impl<'src> Parser<'_, 'src> {
 
         DeclarationHead {
             qualifier,
-            layout,
+            layout: binding_layout.or(layout),
             type_name,
+            array_suffix: name
+                .as_ref()
+                .and_then(|_name| self.array_suffix_after(index, semicolon)),
             name,
-            array_suffix: name.and_then(|_name| self.array_suffix_after(index, semicolon)),
         }
     }
 
@@ -346,13 +366,28 @@ impl<'src> Parser<'_, 'src> {
         }
 
         SourceSpan::new(
-            self.tokens[start].span.start(),
-            self.tokens[end - 1].span.end(),
+            self.tokens[start].span().start(),
+            self.tokens[end - 1].span().end(),
         )
         .ok()
         .map(|span| DeclarationLayout {
             source: self.context.slice(span),
+            set: self.layout_integer_field(start, end, "set"),
+            binding: self.layout_integer_field(start, end, "binding"),
         })
+    }
+
+    /// Returns an integer field value from a `layout(...)` token range.
+    fn layout_integer_field(&self, start: usize, end: usize, field: &str) -> Option<u32> {
+        let open = self.next_non_comment(start + 1)?;
+        if open >= end || !self.tokens[open].kind().is_left_paren() {
+            return None;
+        }
+        let close = self.find_matching_paren(open).ok()?;
+        if close >= end {
+            return None;
+        }
+        self.tokens.integer_field_value(open + 1, close, field)
     }
 
     /// Returns the array suffix immediately after a declaration name.
@@ -362,32 +397,52 @@ impl<'src> Parser<'_, 'src> {
         semicolon: usize,
     ) -> Option<DeclarationArraySuffix<'src>> {
         let open = self.next_non_comment(name_index + 1)?;
-        if open >= semicolon || !matches!(self.tokens[open].kind, TokenKind::Punctuation('[')) {
+        if open >= semicolon || !self.tokens[open].kind().is_left_square() {
             return None;
         }
 
         let close = self.find_array_suffix_end(open, semicolon)?;
         SourceSpan::new(
-            self.tokens[open].span.start(),
-            self.tokens[close].span.end(),
+            self.tokens[open].span().start(),
+            self.tokens[close].span().end(),
         )
         .ok()
         .map(|span| DeclarationArraySuffix {
             source: self.context.slice(span),
+            size: self.array_size_expression(open, close),
         })
+    }
+
+    /// Returns a parsed size expression from a declaration array suffix.
+    fn array_size_expression(&self, open: usize, close: usize) -> Option<DeclarationArraySize> {
+        let value = self.next_non_comment(open + 1)?;
+        if value >= close {
+            return None;
+        }
+        if self.next_non_comment(value + 1)? != close {
+            return None;
+        }
+        match self.tokens[value].kind() {
+            TypedToken::Literal(LiteralValue::Number(text)) => {
+                text.parse::<u32>().ok().map(DeclarationArraySize::Numeric)
+            }
+            TypedToken::Identifier(identifier) => {
+                Some(DeclarationArraySize::MacroIdentifier(identifier.clone()))
+            }
+            _ => None,
+        }
     }
 
     /// Finds the closing bracket for a simple declaration array suffix.
     fn find_array_suffix_end(&self, open: usize, semicolon: usize) -> Option<usize> {
         let mut index = open + 1;
         while index < semicolon {
-            if matches!(self.tokens[index].kind, TokenKind::Punctuation(']')) {
+            if self.tokens[index].kind().is_right_square() {
                 return Some(index);
             }
-            if matches!(
-                self.tokens[index].kind,
-                TokenKind::Comma | TokenKind::Punctuation('=')
-            ) {
+            if matches!(self.tokens[index].kind(), TypedToken::Comma)
+                || self.tokens[index].kind().is_simple_assignment_operator()
+            {
                 return None;
             }
             index += 1;
@@ -401,7 +456,7 @@ impl<'src> Parser<'_, 'src> {
         let Some(next) = self.next_non_comment(index + 1) else {
             return index + 1;
         };
-        if next >= semicolon || !matches!(self.tokens[next].kind, TokenKind::LeftParen) {
+        if next >= semicolon || !self.tokens[next].kind().is_left_paren() {
             return index + 1;
         }
 
@@ -411,45 +466,24 @@ impl<'src> Parser<'_, 'src> {
 
     /// Finds the closing parenthesis for an opening parenthesis token.
     fn find_matching_paren(&self, open: usize) -> ShaderResult<usize> {
-        self.find_balanced(
-            open,
-            TokenKindMatcher::LeftParen,
-            TokenKindMatcher::RightParen,
-        )
+        self.find_balanced(open, self.tokens.matching_right_paren(open))
     }
 
     /// Finds the closing brace for an opening brace token.
     fn find_matching_brace(&self, open: usize) -> ShaderResult<usize> {
-        self.find_balanced(
-            open,
-            TokenKindMatcher::LeftBrace,
-            TokenKindMatcher::RightBrace,
-        )
+        self.find_balanced(open, self.tokens.matching_right_brace(open))
     }
 
     /// Finds the matching close delimiter for a balanced token pair.
-    fn find_balanced(
-        &self,
-        open: usize,
-        open_matcher: TokenKindMatcher,
-        close_matcher: TokenKindMatcher,
-    ) -> ShaderResult<usize> {
-        let mut depth = 0usize;
-        for (index, token) in self.tokens.iter().enumerate().skip(open) {
-            if open_matcher.matches(token.kind) {
-                depth += 1;
-            } else if close_matcher.matches(token.kind) {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    return Ok(index);
-                }
-            }
+    fn find_balanced(&self, open: usize, matched: Option<usize>) -> ShaderResult<usize> {
+        if let Some(close) = matched {
+            return Ok(close);
         }
 
         Err(crate::ShaderError::Parse {
             diagnostics: vec![
                 ShaderDiagnostic::new("unbalanced shader delimiter")
-                    .with_span(self.tokens[open].span),
+                    .with_span(self.tokens[open].span()),
             ]
             .into_boxed_slice(),
         })
@@ -461,22 +495,22 @@ impl<'src> Parser<'_, 'src> {
             .iter()
             .enumerate()
             .skip(start)
-            .take_while(|(_, token)| !matches!(token.kind, TokenKind::Semicolon))
-            .find_map(|(index, token)| matcher.matches(token.kind).then_some(index))
+            .take_while(|(_, token)| !matches!(token.kind(), TypedToken::Semicolon))
+            .find_map(|(index, token)| matcher.matches(token.kind()).then_some(index))
     }
 }
 
 /// Parsed declaration header fields used to classify top-level declarations.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct DeclarationHead<'src> {
     /// Recognized interface qualifier, when present.
     qualifier: Option<TopLevelQualifier>,
     /// Leading layout qualifier, when present.
     layout: Option<DeclarationLayout<'src>>,
-    /// Borrowed declaration type token, when known.
-    type_name: Option<&'src str>,
-    /// Borrowed declaration identifier token, when known.
-    name: Option<&'src str>,
+    /// Declaration type token, when known.
+    type_name: Option<SmolStr>,
+    /// Declaration identifier token, when known.
+    name: Option<SmolStr>,
     /// Array suffix on the declared identifier, when present.
     array_suffix: Option<DeclarationArraySuffix<'src>>,
 }
@@ -486,23 +520,11 @@ struct DeclarationHead<'src> {
 enum TokenKindMatcher {
     /// Matches `{`.
     LeftBrace,
-    /// Matches `}`.
-    RightBrace,
-    /// Matches `(`.
-    LeftParen,
-    /// Matches `)`.
-    RightParen,
 }
 
 impl TokenKindMatcher {
     /// Returns whether `kind` matches this delimiter category.
-    const fn matches(self, kind: TokenKind<'_>) -> bool {
-        matches!(
-            (self, kind),
-            (Self::LeftBrace, TokenKind::LeftBrace)
-                | (Self::RightBrace, TokenKind::RightBrace)
-                | (Self::LeftParen, TokenKind::LeftParen)
-                | (Self::RightParen, TokenKind::RightParen)
-        )
+    const fn matches(self, kind: &TypedToken) -> bool {
+        matches!((self, kind), (Self::LeftBrace, TypedToken::LeftBrace))
     }
 }

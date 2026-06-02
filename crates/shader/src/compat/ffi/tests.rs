@@ -7,8 +7,9 @@ use std::{
 
 use super::{
     RsShaderOwnedBytes, rs_shader_compile_program, rs_shader_last_error,
-    rs_shader_program_diagnostics_json, rs_shader_program_free, rs_shader_program_metadata_json,
-    rs_shader_program_reflection_json, rs_shader_program_stage_count, rs_shader_program_stage_kind,
+    rs_shader_program_cache_key, rs_shader_program_diagnostics_json, rs_shader_program_free,
+    rs_shader_program_metadata_json, rs_shader_program_reflection_json,
+    rs_shader_program_stage_count, rs_shader_program_stage_kind,
     rs_shader_program_stage_spv_word_count, rs_shader_program_stage_spv_words,
 };
 
@@ -160,10 +161,13 @@ fn program_handle_retains_stage_words_and_json_until_free() {
     let reflection = c_str(unsafe { rs_shader_program_reflection_json(program) });
     // SAFETY: Program is a live handle returned by `rs_shader_compile_program`.
     let diagnostics = c_str(unsafe { rs_shader_program_diagnostics_json(program) });
+    // SAFETY: Program is a live handle returned by `rs_shader_compile_program`.
+    let cache_key = c_str(unsafe { rs_shader_program_cache_key(program) });
 
     assert!(metadata.contains("\"active_texture_slots\""));
     assert!(reflection.contains("\"descriptor_bindings\""));
-    assert!(diagnostics.contains("\"pass\":\"Legalizer\""));
+    assert!(diagnostics.contains("\"pass\":\"Codegen\""));
+    assert!(!cache_key.is_empty());
 
     // SAFETY: Program was returned by `rs_shader_compile_program` and has not been
     // freed.
@@ -176,7 +180,7 @@ fn bridge_json_present_false_marks_texture_slot_absent() {
         serde_json::json!({
             "shader_name": "ffi/texture-presence",
             "target": "vulkan_spirv",
-            "cache_policy": {"mode": "disabled"},
+            "cache_strategy": {"mode": "disabled"},
             "stages": [
                 {
                     "kind": "vertex",
@@ -232,6 +236,237 @@ fn bridge_json_present_false_marks_texture_slot_absent() {
 }
 
 #[test]
+fn bridge_json_accepts_enabled_cache_strategy_scene_id() {
+    let request = CString::new(
+        serde_json::json!({
+            "shader_name": "ffi/enabled-cache",
+            "target": "vulkan_spirv",
+            "cache_strategy": {"mode": "enabled", "scene_id": "3611439897"},
+            "stages": [
+                {
+                    "kind": "vertex",
+                    "source": VERTEX_SOURCE
+                },
+                {
+                    "kind": "fragment",
+                    "source": FRAGMENT_SOURCE
+                }
+            ],
+            "combos": [],
+            "textures": [],
+            "properties": []
+        })
+        .to_string(),
+    )
+    .expect("request json should not contain nul");
+    let mut program = ptr::null_mut();
+
+    // SAFETY: Request and out pointers are valid.
+    let status = unsafe {
+        rs_shader_compile_program(request.as_ptr(), None, ptr::null_mut(), &raw mut program)
+    };
+
+    assert_eq!(status, 0, "{}", last_error());
+    assert!(!program.is_null());
+
+    // SAFETY: Program was returned by `rs_shader_compile_program` and has not been
+    // freed.
+    unsafe { rs_shader_program_free(program) };
+}
+
+#[test]
+fn bridge_json_accepts_enabled_cache_policy_scene_id() {
+    let disabled_request = CString::new(ShaderRequestFixture::basic().json())
+        .expect("request json should not contain nul");
+    let cache_policy_request = CString::new(
+        serde_json::json!({
+            "shader_name": "ffi/basic",
+            "target": "vulkan_spirv",
+            "cache_policy": {"mode": "enabled", "scene_id": "3647154673"},
+            "stages": [
+                {
+                    "kind": "vertex",
+                    "source": VERTEX_SOURCE
+                },
+                {
+                    "kind": "fragment",
+                    "source": FRAGMENT_SOURCE
+                }
+            ],
+            "combos": [],
+            "textures": [],
+            "properties": []
+        })
+        .to_string(),
+    )
+    .expect("request json should not contain nul");
+    let mut disabled_program = ptr::null_mut();
+    let mut cache_policy_program = ptr::null_mut();
+
+    // SAFETY: Request and out pointers are valid.
+    let disabled_status = unsafe {
+        rs_shader_compile_program(
+            disabled_request.as_ptr(),
+            None,
+            ptr::null_mut(),
+            &raw mut disabled_program,
+        )
+    };
+    // SAFETY: Request and out pointers are valid.
+    let cache_policy_status = unsafe {
+        rs_shader_compile_program(
+            cache_policy_request.as_ptr(),
+            None,
+            ptr::null_mut(),
+            &raw mut cache_policy_program,
+        )
+    };
+
+    assert_eq!(disabled_status, 0, "{}", last_error());
+    assert_eq!(cache_policy_status, 0, "{}", last_error());
+    assert!(!disabled_program.is_null());
+    assert!(!cache_policy_program.is_null());
+
+    // SAFETY: Programs are live handles returned by `rs_shader_compile_program`.
+    let disabled_cache_key = unsafe { (*disabled_program).program.cache_key().as_str() };
+    // SAFETY: Programs are live handles returned by `rs_shader_compile_program`.
+    let cache_policy_cache_key = unsafe { (*cache_policy_program).program.cache_key().as_str() };
+
+    assert_ne!(disabled_cache_key, cache_policy_cache_key);
+
+    // SAFETY: Programs were returned by `rs_shader_compile_program` and have not
+    // been freed.
+    unsafe {
+        rs_shader_program_free(disabled_program);
+        rs_shader_program_free(cache_policy_program);
+    }
+}
+
+#[test]
+fn metadata_json_exports_typed_vector_and_matrix_defaults() {
+    let request = CString::new(
+        serde_json::json!({
+            "shader_name": "ffi/metadata-defaults",
+            "target": "vulkan_spirv",
+            "cache_strategy": {"mode": "disabled"},
+            "stages": [
+                {
+                    "kind": "vertex",
+                    "source": VERTEX_SOURCE
+                },
+                {
+                    "kind": "fragment",
+                    "source": concat!(
+                        "uniform vec2 g_Scale; // {\"default\":\"1 1\"}\n",
+                        "uniform vec4 g_Tint; // {\"default\":\"1 0.5 0.25 1\"}\n",
+                        "uniform mat4 g_Transform; // {\"default\":\"",
+                        "1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1",
+                        "\"}\n",
+                        "void main() { gl_FragColor = g_Tint; }\n",
+                    )
+                }
+            ],
+            "combos": [],
+            "textures": [],
+            "properties": []
+        })
+        .to_string(),
+    )
+    .expect("request json should not contain nul");
+    let mut program = ptr::null_mut();
+
+    // SAFETY: Request and out pointers are valid.
+    let status = unsafe {
+        rs_shader_compile_program(request.as_ptr(), None, ptr::null_mut(), &raw mut program)
+    };
+
+    assert_eq!(status, 0, "{}", last_error());
+    // SAFETY: Program is a live handle returned by `rs_shader_compile_program`.
+    let metadata = c_str(unsafe { rs_shader_program_metadata_json(program) });
+    let metadata: serde_json::Value =
+        serde_json::from_str(&metadata).expect("metadata json should parse");
+    let defaults = metadata["default_uniforms"]
+        .as_array()
+        .expect("default uniforms should be an array");
+
+    assert_eq!(defaults[0]["name"], "g_Scale");
+    assert_eq!(defaults[0]["value"]["kind"], "vec2");
+    assert_eq!(defaults[0]["value"]["value"], serde_json::json!([1.0, 1.0]));
+    assert_eq!(defaults[1]["name"], "g_Tint");
+    assert_eq!(defaults[1]["value"]["kind"], "vec4");
+    assert_eq!(
+        defaults[1]["value"]["value"],
+        serde_json::json!([1.0, 0.5, 0.25, 1.0])
+    );
+    assert_eq!(defaults[2]["name"], "g_Transform");
+    assert_eq!(defaults[2]["value"]["kind"], "matrix4");
+    assert_eq!(
+        defaults[2]["value"]["value"],
+        serde_json::json!([
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ])
+    );
+
+    // SAFETY: Program was returned by `rs_shader_compile_program` and has not been
+    // freed.
+    unsafe { rs_shader_program_free(program) };
+}
+
+#[test]
+fn bridge_json_accepts_typed_vector_and_matrix_property_values() {
+    let request = CString::new(
+        serde_json::json!({
+            "shader_name": "ffi/property-values",
+            "target": "vulkan_spirv",
+            "cache_strategy": {"mode": "disabled"},
+            "stages": [
+                {
+                    "kind": "vertex",
+                    "source": VERTEX_SOURCE
+                },
+                {
+                    "kind": "fragment",
+                    "source": FRAGMENT_SOURCE
+                }
+            ],
+            "combos": [],
+            "textures": [],
+            "properties": [
+                {"name": "scale", "value": {"kind": "vec2", "value": [1.0, 1.0]}},
+                {"name": "tint", "value": {"kind": "vec4", "value": [1.0, 0.5, 0.25, 1.0]}},
+                {
+                    "name": "transform",
+                    "value": {
+                        "kind": "matrix4",
+                        "value": [
+                            1.0, 0.0, 0.0, 0.0,
+                            0.0, 1.0, 0.0, 0.0,
+                            0.0, 0.0, 1.0, 0.0,
+                            0.0, 0.0, 0.0, 1.0
+                        ]
+                    }
+                }
+            ]
+        })
+        .to_string(),
+    )
+    .expect("request json should not contain nul");
+    let mut program = ptr::null_mut();
+
+    // SAFETY: Request and out pointers are valid.
+    let status = unsafe {
+        rs_shader_compile_program(request.as_ptr(), None, ptr::null_mut(), &raw mut program)
+    };
+
+    assert_eq!(status, 0, "{}", last_error());
+    assert!(!program.is_null());
+
+    // SAFETY: Program was returned by `rs_shader_compile_program` and has not been
+    // freed.
+    unsafe { rs_shader_program_free(program) };
+}
+
+#[test]
 fn json_accessors_return_stable_borrowed_pointers() {
     let request = CString::new(ShaderRequestFixture::basic().json())
         .expect("request json should not contain nul");
@@ -260,6 +495,12 @@ fn json_accessors_return_stable_borrowed_pointers() {
         unsafe { rs_shader_program_diagnostics_json(program) },
         // SAFETY: Program is a live handle returned by `rs_shader_compile_program`.
         unsafe { rs_shader_program_diagnostics_json(program) }
+    );
+    assert_eq!(
+        // SAFETY: Program is a live handle returned by `rs_shader_compile_program`.
+        unsafe { rs_shader_program_cache_key(program) },
+        // SAFETY: Program is a live handle returned by `rs_shader_compile_program`.
+        unsafe { rs_shader_program_cache_key(program) }
     );
 
     // SAFETY: Program was returned by `rs_shader_compile_program` and has not been
@@ -298,7 +539,7 @@ impl ShaderRequestFixture {
         serde_json::json!({
             "shader_name": self.shader_name,
             "target": "vulkan_spirv",
-            "cache_policy": {"mode": "disabled"},
+            "cache_strategy": {"mode": "disabled"},
             "stages": [
                 {
                     "kind": "vertex",

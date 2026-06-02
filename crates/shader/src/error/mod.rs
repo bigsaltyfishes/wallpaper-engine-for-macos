@@ -52,10 +52,10 @@ pub enum ShaderError {
         diagnostics: Box<[ShaderDiagnostic]>,
     },
 
-    /// Shader legalization failed.
-    #[error("shader legalization failed")]
-    Legalize {
-        /// Legalization diagnostics.
+    /// Shader codegen failed.
+    #[error("shader codegen failed")]
+    Codegen {
+        /// Codegen diagnostics.
         diagnostics: Box<[ShaderDiagnostic]>,
     },
 
@@ -120,7 +120,7 @@ impl ShaderError {
     pub fn to_miette_report(&self) -> String {
         let diagnostics = match self {
             Self::Parse { diagnostics }
-            | Self::Legalize { diagnostics }
+            | Self::Codegen { diagnostics }
             | Self::Compile { diagnostics } => diagnostics.as_ref(),
             Self::InvalidRequest { .. }
             | Self::IncludeNotFound { .. }

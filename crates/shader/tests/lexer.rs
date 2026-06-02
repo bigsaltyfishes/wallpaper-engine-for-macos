@@ -1,11 +1,153 @@
 use shader::{
     ShaderStageKind,
-    lexer::{TokenKind, TokenStream, TokenStreamExt},
     syntax::{
-        AnnotationKind, DeclarationKind, ParsingContext, ShaderModule, SyntaxItem,
-        TopLevelQualifier,
+        AnnotationKind, DeclarationArraySize, DeclarationKind, ParsingContext, ShaderModule,
+        SyntaxItem, TopLevelQualifier,
     },
+    tokenizer::{KeywordType, LiteralValue, PrimitiveType, TokenStream, TypedToken},
 };
+
+#[test]
+fn token_stream_exposes_vec_like_read_access_for_api_migration() {
+    let source = "uniform float value;\n";
+    let tokens = TokenStream::lex(source).expect("shader should lex");
+
+    assert_eq!(tokens.len(), tokens.as_slice().len());
+    assert_eq!(tokens.iter().count(), tokens.len());
+    assert_eq!(tokens.as_ref(), tokens.as_slice());
+}
+
+#[test]
+fn token_stream_searches_comments_and_balanced_delimiters() {
+    let source = "void main /* c */ () { color[0] = vec4((1.0)); }\n";
+    let stream = TokenStream::lex(source).expect("shader should lex");
+    let tokens = stream.as_slice();
+    let name = tokens
+        .iter()
+        .position(|token| matches!(token.kind(), TypedToken::Identifier(name) if name == "main"))
+        .expect("main token exists");
+    let paren = tokens
+        .iter()
+        .position(|token| token.kind().is_left_paren())
+        .expect("left paren exists");
+    let brace = tokens
+        .iter()
+        .position(|token| matches!(token.kind(), TypedToken::LeftBrace))
+        .expect("left brace exists");
+    let bracket = tokens
+        .iter()
+        .position(|token| token.kind().is_left_square())
+        .expect("left bracket exists");
+
+    assert_eq!(stream.next_non_comment(name + 1), Some(paren));
+    assert_eq!(stream.previous_non_comment(paren), Some(name));
+    assert!(matches!(
+        tokens[stream
+            .matching_right_paren(paren)
+            .expect("right paren matches")]
+        .kind(),
+        kind if kind.is_right_paren()
+    ));
+    assert!(matches!(
+        tokens[stream
+            .matching_right_brace(brace)
+            .expect("right brace matches")]
+        .kind(),
+        TypedToken::RightBrace
+    ));
+    assert!(matches!(
+        tokens[stream
+            .matching_right_square(bracket)
+            .expect("right bracket matches")]
+        .kind(),
+        kind if kind.is_right_square()
+    ));
+}
+
+#[test]
+fn token_stream_searches_matches_and_reports_identifiers() {
+    let source = "void main /* c */ () { float color[2]; }\n";
+    let stream = TokenStream::lex(source).expect("shader should lex");
+    let tokens = stream.as_slice();
+    let main = tokens
+        .iter()
+        .position(|token| matches!(token.kind(), TypedToken::Identifier(name) if name == "main"))
+        .expect("main token exists");
+    let paren = tokens
+        .iter()
+        .position(|token| token.kind().is_left_paren())
+        .expect("left paren exists");
+    let brace = tokens
+        .iter()
+        .position(|token| matches!(token.kind(), TypedToken::LeftBrace))
+        .expect("left brace exists");
+    let bracket = tokens
+        .iter()
+        .position(|token| token.kind().is_left_square())
+        .expect("left bracket exists");
+
+    assert_eq!(stream.next_non_comment(main + 1), Some(paren));
+    assert_eq!(stream.previous_non_comment(paren), Some(main));
+    assert!(matches!(
+        tokens[stream
+            .matching_right_paren(paren)
+            .expect("right paren matches")]
+        .kind(),
+        kind if kind.is_right_paren()
+    ));
+    assert!(matches!(
+        tokens[stream
+            .matching_right_brace(brace)
+            .expect("right brace matches")]
+        .kind(),
+        TypedToken::RightBrace
+    ));
+    assert!(matches!(
+        tokens[stream
+            .matching_right_square(bracket)
+            .expect("right bracket matches")]
+        .kind(),
+        kind if kind.is_right_square()
+    ));
+
+    let identifiers: Vec<_> = stream
+        .identifiers()
+        .map(|identifier| (identifier.text(), identifier.span()))
+        .collect();
+
+    assert_eq!(
+        identifiers
+            .iter()
+            .map(|(text, _)| *text)
+            .collect::<Vec<_>>(),
+        vec!["void", "main", "float", "color"]
+    );
+    assert_eq!(
+        &source[identifiers[3].1.start()..identifiers[3].1.end()],
+        "color"
+    );
+}
+
+#[test]
+fn owned_token_stream_into_iterator_preserves_vec_alias_semantics() {
+    let source = "uniform float value;\n";
+    let tokens = TokenStream::lex(source).expect("shader should lex");
+
+    let token_kinds: Vec<_> = tokens
+        .into_iter()
+        .map(|token| token.kind().clone())
+        .collect();
+
+    assert_eq!(
+        token_kinds,
+        vec![
+            TypedToken::Keyword(KeywordType::Uniform),
+            TypedToken::TypeMark(PrimitiveType::Float),
+            TypedToken::Identifier("value".into()),
+            TypedToken::Semicolon,
+        ]
+    );
+}
 
 #[test]
 fn lexes_wallpaper_engine_annotations() {
@@ -19,8 +161,8 @@ fn lexes_wallpaper_engine_annotations() {
 
     let annotation_texts: Vec<&str> = tokens
         .iter()
-        .filter_map(|token| match token.kind {
-            TokenKind::Annotation(text) => Some(text),
+        .filter_map(|token| match token.kind() {
+            TypedToken::Annotation(text) => Some(text.as_str()),
             _ => None,
         })
         .collect();
@@ -36,16 +178,17 @@ fn lexes_wallpaper_engine_annotations() {
 }
 
 #[test]
-fn token_kind_owns_identifier_comment_and_modifier_classification() {
+fn typed_token_owns_identifier_and_modifier_classification() {
     assert_eq!(
-        TokenKind::Identifier("sampler2D").identifier_text(),
-        Some("sampler2D")
+        TypedToken::from_identifier_text("sampler2D"),
+        TypedToken::TypeMark(PrimitiveType::Sampler2D)
     );
-    assert_eq!(TokenKind::Number("1.0").identifier_text(), None);
-    assert!(TokenKind::Comment("// comment").is_comment());
-    assert!(!TokenKind::Annotation("// [COMBO] {\"combo\":\"VALUE\",\"default\":0}").is_comment());
-    assert!(TokenKind::Identifier("highp").is_declaration_modifier());
-    assert!(!TokenKind::Identifier("uniform").is_declaration_modifier());
+    assert_eq!(
+        TypedToken::Literal(LiteralValue::Number("1.0".into())).identifier_text(),
+        None
+    );
+    assert!(TypedToken::Identifier("highp".into()).is_declaration_modifier());
+    assert!(!TypedToken::Keyword(KeywordType::Uniform).is_declaration_modifier());
 }
 
 #[test]
@@ -95,8 +238,12 @@ fn parsing_context_owns_source_tokens_and_typed_slicing() {
     assert_eq!(context.stage(), ShaderStageKind::Fragment);
     assert_eq!(module.stage(), ShaderStageKind::Fragment);
     assert!(matches!(
-        context.tokens().first().map(|token| token.kind),
-        Some(TokenKind::Annotation(_))
+        context
+            .token_stream()
+            .as_slice()
+            .first()
+            .map(|token| token.kind()),
+        Some(TypedToken::Annotation(_))
     ));
 
     let SyntaxItem::Annotation(combo) = &module.items()[0] else {
@@ -129,8 +276,8 @@ fn lexes_preprocessor_directives_with_spans() {
     let tokens = TokenStream::lex(source).expect("shader should lex");
     let directives: Vec<_> = tokens
         .iter()
-        .filter_map(|token| match token.kind {
-            TokenKind::Directive(text) => Some((text, token.span)),
+        .filter_map(|token| match token.kind() {
+            TypedToken::Directive(text) => Some((text.as_str(), token.span())),
             _ => None,
         })
         .collect();
@@ -159,8 +306,8 @@ fn parses_typed_directives_without_changing_token_spans() {
     let module = ShaderModule::parse(ShaderStageKind::Fragment, source).expect("module parses");
     let token_spans: Vec<_> = tokens
         .iter()
-        .filter_map(|token| match token.kind {
-            TokenKind::Directive(_) => Some(token.span),
+        .filter_map(|token| match token.kind() {
+            TypedToken::Directive(_) => Some(token.span()),
             _ => None,
         })
         .collect();
@@ -264,6 +411,7 @@ fn parses_function_signatures_and_balanced_body_spans() {
     assert_eq!(functions.len(), 2);
     assert_eq!(functions[0].return_type(), "float");
     assert_eq!(functions[0].name(), "helper");
+    assert_eq!(module.slice(functions[0].name_span()), "helper");
     assert_eq!(functions[0].parameters_in(&module), "float x");
     assert!(functions[0].body_in(&module).starts_with("{\n    if"));
     assert!(functions[0].body_in(&module).ends_with('}'));
@@ -348,14 +496,48 @@ fn parses_declarations_with_precision_and_layout_qualifiers() {
 }
 
 #[test]
+fn parses_declaration_layout_binding_and_array_size_facts() {
+    let source = concat!(
+        "#define LOCAL_COUNT 4\n",
+        "layout(binding = 5) layout(std140) uniform vec4 offsets[LOCAL_COUNT];\n",
+        "layout(set = 1, binding = 2) uniform samplerCube env;\n",
+    );
+
+    let module = ShaderModule::parse(ShaderStageKind::Vertex, source).expect("module parses");
+    let declarations: Vec<_> = module
+        .items()
+        .iter()
+        .filter_map(|item| match item {
+            SyntaxItem::Declaration(declaration) => Some(declaration),
+            _ => None,
+        })
+        .collect();
+
+    let offsets_layout = declarations[0].layout().expect("offsets layout parsed");
+    assert_eq!(offsets_layout.binding(), Some(5));
+    assert_eq!(offsets_layout.set(), None);
+    assert_eq!(
+        declarations[0]
+            .array_suffix()
+            .and_then(|suffix| suffix.size()),
+        Some(DeclarationArraySize::MacroIdentifier("LOCAL_COUNT".into()))
+    );
+
+    let env_layout = declarations[1].layout().expect("env layout parsed");
+    assert_eq!(env_layout.binding(), Some(2));
+    assert_eq!(env_layout.set(), Some(1));
+    assert_eq!(declarations[1].array_suffix(), None);
+}
+
+#[test]
 fn lexes_multiline_preprocessor_continuation_as_one_directive() {
     let source = "#define X(a) \\\n  ((a) + 1)\nuniform float value;\n";
 
     let tokens = TokenStream::lex(source).expect("shader should lex");
     let directives: Vec<_> = tokens
         .iter()
-        .filter_map(|token| match token.kind {
-            TokenKind::Directive(text) => Some((text, token.span)),
+        .filter_map(|token| match token.kind() {
+            TypedToken::Directive(text) => Some((text.as_str(), token.span())),
             _ => None,
         })
         .collect();

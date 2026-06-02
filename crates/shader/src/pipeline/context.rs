@@ -2,10 +2,9 @@ use crate::{
     CompiledShaderProgram, ShaderCompiler, ShaderProgramRequest, ShaderReflector, ShaderResult,
     ShaderSourceProvider,
     compile::NagaCompiler,
-    metadata::ShaderModuleMetadataExt,
     pipeline::{
-        cache::{CacheKeyBuilder, CacheKeySeed},
-        inputs::{ProgramStageInputs, ProgramStageSources},
+        cache::CacheKeyBuilder,
+        inputs::ProgramStageInputs,
         interface::{ProgramInterface, StageGlobalNames},
         metadata::{MetadataMerger, RequestWithMetadataCombos},
         reflection::ReflectionMerger,
@@ -81,7 +80,7 @@ where
     /// # Errors
     ///
     /// Returns an error when preprocessing, parsing, metadata extraction,
-    /// legalization, compilation, or reflection fails.
+    /// codegen, compilation, or reflection fails.
     pub fn compile(&self, request: &ShaderProgramRequest) -> ShaderResult<CompiledShaderProgram> {
         PipelineContext {
             pipeline: self,
@@ -115,23 +114,38 @@ where
         let preprocess_context = PreprocessContext::new(request, &self.pipeline.provider);
         let metadata_sources = preprocess_context.expand_includes_preserving_conditionals()?;
         let preprocessed = preprocess_context.preprocess()?;
-        let stage_inputs = ProgramStageInputs::try_from(ProgramStageSources {
-            stages: preprocessed.stages(),
-            metadata_sources: metadata_sources.stages(),
-        })?;
-        let stage_global_names = StageGlobalNames::from(stage_inputs.stages());
-        let program_interface = ProgramInterface::from(stage_inputs.stages())
+        let stage_inputs =
+            ProgramStageInputs::new(preprocessed.stages(), metadata_sources.stages())?;
+        let stage_global_names = StageGlobalNames::new(stage_inputs.stages());
+        let program_interface = ProgramInterface::new(stage_inputs.stages())
             .validate_with_names(&stage_global_names)?;
-        let program_resources = ProgramResourceLayout::from_inputs(&stage_inputs)?;
+        let program_resources = ProgramResourceLayout::build_from_stage_inputs(&stage_inputs)?;
 
         let mut stages = Vec::with_capacity(preprocessed.stages().len());
         let mut metadata = MetadataMerger::default();
         let mut reflection = ReflectionMerger::default();
         let mut diagnostics = Vec::new();
-        let mut cache_builder = CacheKeyBuilder::from(CacheKeySeed {
-            revision: self.pipeline.revision,
-            request,
+        let mut cache_builder = CacheKeyBuilder::default();
+        cache_builder.push("shader-pipeline-cache-v1");
+        cache_builder.push_u64(self.pipeline.revision.value());
+        cache_builder.push(request.shader_name().as_str());
+        cache_builder.push(match request.target() {
+            crate::ShaderTarget::VulkanSpirv => "vulkan_spirv",
         });
+        cache_builder.push_cache_strategy(request.compact_cache_strategy());
+        for combo in request.combos() {
+            cache_builder.push("combo");
+            cache_builder.push(combo.name().as_str());
+            cache_builder.push(combo.value());
+        }
+        for texture in request.textures() {
+            cache_builder.push_texture(texture);
+        }
+        for property in request.properties() {
+            cache_builder.push("property");
+            cache_builder.push(property.name().as_str());
+            cache_builder.push_property_value(property.value());
+        }
 
         for input in stage_inputs.stages() {
             let stage_output = StagePipeline {
@@ -183,7 +197,7 @@ where
     ) -> ShaderResult<Option<ShaderProgramRequest>> {
         let preprocess_context = PreprocessContext::new(self.request, provider);
         let stages = preprocess_context.preprocess()?;
-        let stage_inputs = ProgramStageInputs::try_from(stages.stages())?;
+        let stage_inputs = ProgramStageInputs::parse(stages.stages())?;
         let mut metadata = MetadataMerger::default();
 
         for input in stage_inputs.stages() {
@@ -195,7 +209,11 @@ where
         }
 
         let metadata = metadata.finish();
-        let mut builder = RequestWithMetadataCombos::from(self.request);
+        if metadata.combos().is_empty() {
+            return RequestWithMetadataCombos::new(self.request).finish();
+        }
+
+        let mut builder = RequestWithMetadataCombos::new(self.request);
         for combo in metadata.combos() {
             builder.push_default(combo)?;
         }

@@ -1,8 +1,8 @@
-use std::collections::BTreeMap;
+use smol_str::SmolStr;
 
 use super::{
-    ShaderCachePolicy, ShaderComboValue, ShaderName, ShaderStageKind, ShaderStageSource,
-    ShaderTarget, ShaderTextureInfo,
+    CompactShaderCacheStrategy, ShaderCacheStrategy, ShaderComboValue, ShaderName, ShaderStageKind,
+    ShaderStageSource, ShaderTarget, ShaderTextureInfo,
 };
 use crate::{ProjectPropertyBinding, PropertyValue, ShaderError, ShaderResult};
 
@@ -23,7 +23,10 @@ pub struct ShaderProgramRequest {
     /// Backend target requested by the caller.
     target: ShaderTarget,
     /// Cache behavior requested for this program.
-    cache_policy: ShaderCachePolicy,
+    cache_strategy: ShaderCacheStrategy,
+    /// Compact cache behavior used by internal cache-key construction.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    compact_cache_strategy: CompactShaderCacheStrategy,
 }
 
 impl ShaderProgramRequest {
@@ -37,7 +40,7 @@ impl ShaderProgramRequest {
             textures: Vec::new(),
             properties: Vec::new(),
             target: ShaderTarget::default(),
-            cache_policy: ShaderCachePolicy::default(),
+            cache_strategy: ShaderCacheStrategy::default(),
         }
     }
 
@@ -77,10 +80,16 @@ impl ShaderProgramRequest {
         self.target
     }
 
-    /// Returns the cache policy.
+    /// Returns the cache strategy.
     #[must_use]
-    pub const fn cache_policy(&self) -> &ShaderCachePolicy {
-        &self.cache_policy
+    pub const fn cache_strategy(&self) -> &ShaderCacheStrategy {
+        &self.cache_strategy
+    }
+
+    /// Returns the compact internal cache strategy.
+    #[must_use]
+    pub const fn compact_cache_strategy(&self) -> &CompactShaderCacheStrategy {
+        &self.compact_cache_strategy
     }
 }
 
@@ -99,13 +108,13 @@ impl<'de> serde::Deserialize<'de> for ShaderProgramRequest {
             textures: Vec<ShaderTextureInfo>,
             properties: Vec<ProjectPropertyBinding>,
             target: ShaderTarget,
-            cache_policy: ShaderCachePolicy,
+            cache_strategy: ShaderCacheStrategy,
         }
 
         let dto = ShaderProgramRequestFields::deserialize(deserializer)?;
         let mut builder = ShaderProgramRequest::builder(dto.shader_name)
             .target(dto.target)
-            .cache_policy(dto.cache_policy);
+            .cache_strategy(dto.cache_strategy);
 
         for stage in dto.stages {
             builder = builder.stage(stage);
@@ -141,7 +150,7 @@ pub struct ShaderProgramRequestBuilder {
     /// Selected shader target.
     target: ShaderTarget,
     /// Selected cache behavior.
-    cache_policy: ShaderCachePolicy,
+    cache_strategy: ShaderCacheStrategy,
 }
 
 impl ShaderProgramRequestBuilder {
@@ -193,10 +202,10 @@ impl ShaderProgramRequestBuilder {
         self
     }
 
-    /// Sets the shader cache policy.
+    /// Sets the shader cache strategy.
     #[must_use = "builder methods return an updated builder"]
-    pub fn cache_policy(mut self, cache_policy: ShaderCachePolicy) -> Self {
-        self.cache_policy = cache_policy;
+    pub fn cache_strategy(mut self, cache_strategy: ShaderCacheStrategy) -> Self {
+        self.cache_strategy = cache_strategy;
         self
     }
 
@@ -269,45 +278,44 @@ impl ShaderProgramRequestBuilder {
             }
         }
 
-        let mut order = Vec::<String>::with_capacity(self.combos.len());
-        let mut values = BTreeMap::<String, ShaderComboValue>::new();
+        let mut values = Vec::<RequestComboEntry>::with_capacity(self.combos.len());
 
         for combo in self.combos {
-            let key = combo.value.name().normalized();
+            let key = combo.value.name().normalized_compact();
+            let existing = values.iter_mut().find(|entry| entry.has_key(&key));
 
-            if values.contains_key(&key) && !combo.replace {
+            if existing.is_some() && !combo.replace {
                 return Err(ShaderError::invalid_request(format!(
                     "duplicate combo name {key}"
                 )));
             }
 
-            if !values.contains_key(&key) {
-                order.push(key.clone());
-            }
-
-            let _old = values.insert(key, combo.value);
-        }
-
-        let mut combos = Vec::with_capacity(order.len());
-        for key in order {
-            if let Some(value) = values.remove(&key) {
-                combos.push(value);
+            if let Some(existing) = existing {
+                existing.replace(combo.value);
+            } else {
+                values.push(RequestComboEntry {
+                    key,
+                    value: combo.value,
+                });
             }
         }
+
+        let compact_cache_strategy = CompactShaderCacheStrategy::from(&self.cache_strategy);
 
         Ok(ShaderProgramRequest {
             shader_name: self.shader_name,
             stages: self.stages.into_boxed_slice(),
-            combos: combos.into_boxed_slice(),
+            combos: values.into_iter().map(|entry| entry.value).collect(),
             textures: self.textures.into_boxed_slice(),
             properties: self.properties.into_boxed_slice(),
             target: self.target,
-            cache_policy: self.cache_policy,
+            cache_strategy: self.cache_strategy,
+            compact_cache_strategy,
         })
     }
 }
 
-/// Combo value queued by the builder with its duplicate handling policy.
+/// Combo value queued by the builder with its duplicate handling strategy.
 #[derive(Clone, Debug)]
 struct PendingCombo {
     /// Combo payload supplied by the caller.
@@ -315,4 +323,60 @@ struct PendingCombo {
     /// Whether this value replaces a previously queued value with the same
     /// normalized name.
     replace: bool,
+}
+
+/// First-seen request combo slot keyed by normalized combo name.
+#[derive(Clone, Debug)]
+struct RequestComboEntry {
+    /// Normalized combo key.
+    key: SmolStr,
+    /// Current combo value for that key.
+    value: ShaderComboValue,
+}
+
+impl RequestComboEntry {
+    /// Returns whether this entry uses the provided normalized key.
+    fn has_key(&self, key: &str) -> bool {
+        self.key.as_str() == key
+    }
+
+    /// Replaces the combo value without changing first-seen order.
+    fn replace(&mut self, value: ShaderComboValue) {
+        self.value = value;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use smol_str::SmolStr;
+
+    use super::*;
+
+    #[test]
+    fn build_converts_public_cache_strategy_to_compact_internal_strategy() {
+        let request = ShaderProgramRequest::builder(
+            ShaderName::new("effects/genericimage").expect("valid shader name"),
+        )
+        .stage(ShaderStageSource::new(
+            ShaderStageKind::Vertex,
+            "void main() {}",
+        ))
+        .stage(ShaderStageSource::new(
+            ShaderStageKind::Fragment,
+            "void main() {}",
+        ))
+        .cache_strategy(ShaderCacheStrategy::Enabled {
+            scene_id: "3611439897".to_owned(),
+        })
+        .build()
+        .expect("request should be valid");
+
+        let scene_id: SmolStr = request
+            .compact_cache_strategy()
+            .scene_id()
+            .expect("cache should be enabled")
+            .clone();
+
+        assert_eq!(scene_id.as_str(), "3611439897");
+    }
 }

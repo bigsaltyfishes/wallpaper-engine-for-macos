@@ -32,15 +32,15 @@ impl<'src> JsonObject<'src> {
             return Ok(None);
         };
         if let Some(number) = JsonNumberSlice::new(value).read() {
-            return Ok(Some(PropertyValue::Number(number.parse_metadata_f32()?)));
+            return Ok(Some(PropertyValue::Number(number.parse::<f32>().map_err(
+                |_| ShaderError::invalid_request("metadata number is invalid"),
+            )?)));
         }
         if let Some(text) = value.strip_prefix('"') {
             let Some((decoded, _)) = JsonStringSlice::new(text).read()? else {
                 return Ok(None);
             };
-            return (AnnotationDefault { source: decoded })
-                .into_property_value()
-                .map(Some);
+            return PropertyValue::parse_metadata_default(decoded).map(Some);
         }
         if value.starts_with("true") {
             return Ok(Some(PropertyValue::Bool(true)));
@@ -147,24 +147,11 @@ pub(super) enum AnnotationDefaultValue<'src> {
     Property(PropertyValue),
 }
 
-/// Numeric metadata parsing for borrowed JSON number text.
-trait MetadataNumberExt {
-    /// Parses a metadata number into an `f32`.
-    fn parse_metadata_f32(self) -> ShaderResult<f32>;
-}
-
-impl MetadataNumberExt for &str {
-    fn parse_metadata_f32(self) -> ShaderResult<f32> {
-        self.parse::<f32>()
-            .map_err(|_| ShaderError::invalid_request("metadata number is invalid"))
-    }
-}
-
 /// Uniform name that may encode a Wallpaper Engine texture slot.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct TextureUniformName<'src> {
     /// Uniform identifier text.
-    pub(super) source: &'src str,
+    pub source: &'src str,
 }
 
 impl TextureUniformName<'_> {
@@ -219,31 +206,55 @@ impl<'src> JsonObject<'src> {
     }
 }
 
-/// String default annotation that may contain scalar/vector text.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct AnnotationDefault<'src> {
-    /// Decoded default string content.
-    source: &'src str,
-}
-
-impl AnnotationDefault<'_> {
-    /// Converts the annotation text into the closest property value.
-    fn into_property_value(self) -> ShaderResult<PropertyValue> {
+impl PropertyValue {
+    /// Parses a decoded metadata default string into the closest property
+    /// value.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the metadata default looks numeric but contains
+    /// an invalid number.
+    pub fn parse_metadata_default(source: &str) -> ShaderResult<Self> {
         let mut values = Vec::new();
-        for part in self
-            .source
-            .split(|character: char| character.is_ascii_whitespace() || character == ',')
+        for part in
+            source.split(|character: char| character.is_ascii_whitespace() || character == ',')
         {
             if part.is_empty() {
                 continue;
             }
-            values.push(part.parse_metadata_f32()?);
+            values.push(
+                part.parse::<f32>()
+                    .map_err(|_| ShaderError::invalid_request("metadata number is invalid"))?,
+            );
         }
 
         match values.as_slice() {
             [one] => Ok(PropertyValue::Number(*one)),
+            [x, y] => Ok(PropertyValue::Vec2([*x, *y])),
             [x, y, z] => Ok(PropertyValue::Vec3([*x, *y, *z])),
-            _ => Ok(PropertyValue::String(self.source.to_owned())),
+            [x, y, z, w] => Ok(PropertyValue::Vec4([*x, *y, *z, *w])),
+            [
+                x0,
+                x1,
+                x2,
+                x3,
+                x4,
+                x5,
+                x6,
+                x7,
+                x8,
+                x9,
+                x10,
+                x11,
+                x12,
+                x13,
+                x14,
+                x15,
+            ] => Ok(PropertyValue::Matrix4([
+                *x0, *x1, *x2, *x3, *x4, *x5, *x6, *x7, *x8, *x9, *x10, *x11, *x12, *x13, *x14,
+                *x15,
+            ])),
+            _ => Ok(PropertyValue::String(source.to_owned())),
         }
     }
 }

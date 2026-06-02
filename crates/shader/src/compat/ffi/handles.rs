@@ -10,26 +10,31 @@ use crate::{CompiledShaderProgram, ShaderError};
 
 thread_local! {
     /// Thread-local error text exposed by `rs_shader_last_error`.
-    pub(in crate::compat::ffi) static LAST_ERROR: RefCell<CString> = RefCell::new(cstring_lossy("no shader error"));
+    pub(super) static LAST_ERROR: RefCell<CString> = RefCell::new(cstring_lossy("no shader error"));
 }
 
 /// Opaque compiled shader program handle returned to C++.
 #[derive(Debug)]
 pub struct RsShaderProgram {
     /// Compiled shader program retained by this handle.
-    pub(in crate::compat::ffi) program: CompiledShaderProgram,
+    pub(super) program: CompiledShaderProgram,
     /// Prepared metadata JSON borrowed by accessors.
-    pub(in crate::compat::ffi) metadata_json: CString,
+    pub(super) metadata_json: CString,
     /// Prepared reflection JSON borrowed by accessors.
-    pub(in crate::compat::ffi) reflection_json: CString,
+    pub(super) reflection_json: CString,
     /// Prepared diagnostics JSON borrowed by accessors.
-    pub(in crate::compat::ffi) diagnostics_json: CString,
+    pub(super) diagnostics_json: CString,
+    /// Prepared cache key borrowed by accessors.
+    pub(super) cache_key: CString,
 }
 
-impl TryFrom<CompiledShaderProgram> for RsShaderProgram {
-    type Error = ShaderError;
-
-    fn try_from(program: CompiledShaderProgram) -> Result<Self, Self::Error> {
+impl RsShaderProgram {
+    /// Builds an owned FFI program handle and pre-serializes borrowed JSON
+    /// views.
+    #[allow(clippy::single_call_fn)]
+    pub(super) fn from_compiled_program(
+        program: CompiledShaderProgram,
+    ) -> Result<Self, ShaderError> {
         let metadata_json = cstring_lossy(
             serde_json::to_string(&MetadataJson::from(program.metadata()))
                 .map_err(|error| ShaderError::bridge(error.to_string()))?,
@@ -42,18 +47,20 @@ impl TryFrom<CompiledShaderProgram> for RsShaderProgram {
             serde_json::to_string(&DiagnosticsJson::from(program.diagnostics()))
                 .map_err(|error| ShaderError::bridge(error.to_string()))?,
         );
+        let cache_key = cstring_lossy(program.cache_key().as_str());
 
         Ok(Self {
             program,
             metadata_json,
             reflection_json,
             diagnostics_json,
+            cache_key,
         })
     }
 }
 
 /// Records a thread-local FFI error string.
-pub(in crate::compat::ffi) fn set_last_error(message: impl Into<String>) {
+pub(super) fn set_last_error(message: impl Into<String>) {
     let message = cstring_lossy(message.into());
     LAST_ERROR.with(|last_error| {
         *last_error.borrow_mut() = message;
@@ -61,7 +68,7 @@ pub(in crate::compat::ffi) fn set_last_error(message: impl Into<String>) {
 }
 
 /// Returns a borrowed program handle when `program` is non-null.
-pub(in crate::compat::ffi) fn program_ref<'program>(
+pub(super) fn program_ref<'program>(
     program: *const RsShaderProgram,
 ) -> Option<&'program RsShaderProgram> {
     if program.is_null() {
@@ -74,7 +81,7 @@ pub(in crate::compat::ffi) fn program_ref<'program>(
 }
 
 /// Creates a C string, replacing interior NUL bytes to preserve FFI validity.
-pub(in crate::compat::ffi) fn cstring_lossy(message: impl Into<Vec<u8>>) -> CString {
+pub(super) fn cstring_lossy(message: impl Into<Vec<u8>>) -> CString {
     let bytes = message
         .into()
         .into_iter()

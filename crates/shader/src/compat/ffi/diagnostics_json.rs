@@ -4,7 +4,7 @@ use crate::ShaderDiagnostic;
 
 /// Diagnostics response JSON.
 #[derive(Debug)]
-pub(in crate::compat::ffi) struct DiagnosticsJson<'program> {
+pub(super) struct DiagnosticsJson<'program> {
     /// Diagnostics.
     diagnostics: &'program [ShaderDiagnostic],
 }

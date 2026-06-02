@@ -9,7 +9,7 @@ use naga::{
 use super::diagnostic::DiagnosticBuilder;
 use crate::{
     CompiledShaderStage, CompiledStageArtifact, ShaderCompiler, ShaderError, ShaderResult,
-    ShaderStageKind, legalize::LegalizedStageSource,
+    ShaderStageKind, legalize::CodegenStageSource,
 };
 
 /// Compiler backend that lowers legalized GLSL through Naga and emits SPIR-V.
@@ -22,7 +22,7 @@ impl ShaderCompiler for NagaCompiler {
     fn compile_stage(
         &self,
         stage: ShaderStageKind,
-        source: &LegalizedStageSource,
+        source: &CodegenStageSource,
     ) -> ShaderResult<CompiledStageArtifact<Self::Module>> {
         if source.stage() != stage {
             return Err(ShaderError::invalid_request(format!(
@@ -107,14 +107,10 @@ impl ShaderCompiler for NagaCompiler {
     }
 }
 
-/// Conversion into the equivalent Naga shader stage.
-trait NagaShaderStageExt {
+impl ShaderStageKind {
     /// Converts this stage into Naga's stage enum.
-    fn into_naga(self) -> naga::ShaderStage;
-}
-
-impl NagaShaderStageExt for ShaderStageKind {
-    fn into_naga(self) -> naga::ShaderStage {
+    #[must_use]
+    pub const fn into_naga(self) -> naga::ShaderStage {
         match self {
             Self::Vertex => naga::ShaderStage::Vertex,
             Self::Fragment => naga::ShaderStage::Fragment,

@@ -48,22 +48,10 @@ impl<'src> ShaderSourceText<'src> {
     }
 }
 
-/// Shared behavior for syntax values that expose typed source text.
-pub trait SourceTextView<'src> {
-    /// Returns the typed shader source view.
-    fn source_text(&self) -> ShaderSourceText<'src>;
-}
-
 /// Shared behavior for syntax values that expose a source span.
-pub trait SpannedSyntax {
+pub(super) trait SpannedSyntax {
     /// Returns the syntax value's source span.
     fn span(&self) -> SourceSpan;
-}
-
-impl<'src> SourceTextView<'src> for ShaderSourceText<'src> {
-    fn source_text(&self) -> ShaderSourceText<'src> {
-        *self
-    }
 }
 
 impl Default for SourceSpan {

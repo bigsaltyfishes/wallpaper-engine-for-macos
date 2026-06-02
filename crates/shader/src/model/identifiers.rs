@@ -1,12 +1,14 @@
 use std::fmt;
 
-use crate::{ShaderError, ShaderResult, property::NonEmptyNoNulStrExt};
+use smol_str::SmolStr;
+
+use crate::{ShaderError, ShaderResult};
 
 /// Validated shader program name.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-pub struct ShaderName(String);
+pub struct ShaderName(SmolStr);
 
 impl ShaderName {
     /// Creates a validated shader name.
@@ -15,15 +17,23 @@ impl ShaderName {
     ///
     /// Returns an error when the name is empty or contains a NUL byte.
     pub fn new(name: impl Into<String>) -> ShaderResult<Self> {
-        let name = name.into().normalize_separators();
-        name.as_str().validate_non_empty_no_nul("shader name")?;
-        Ok(Self(name))
+        let name = name.into();
+        let name = name.replace('\\', "/");
+        if name.is_empty() {
+            return Err(ShaderError::invalid_request("shader name is empty"));
+        }
+        if name.contains('\0') {
+            return Err(ShaderError::invalid_request(
+                "shader name contains nul byte",
+            ));
+        }
+        Ok(Self(SmolStr::new(name)))
     }
 
     /// Returns the shader name as a string slice.
     #[must_use]
     pub fn as_str(&self) -> &str {
-        &self.0
+        self.0.as_str()
     }
 }
 
@@ -48,7 +58,7 @@ impl<'de> serde::Deserialize<'de> for ShaderName {
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-pub struct IncludePath(String);
+pub struct IncludePath(SmolStr);
 
 impl IncludePath {
     /// Creates a validated include path.
@@ -58,8 +68,16 @@ impl IncludePath {
     /// Returns an error when the path is empty, absolute, contains `..`, or
     /// contains a NUL byte.
     pub fn new(path: impl Into<String>) -> ShaderResult<Self> {
-        let path = path.into().normalize_separators();
-        path.as_str().validate_non_empty_no_nul("include path")?;
+        let path = path.into();
+        let path = path.replace('\\', "/");
+        if path.is_empty() {
+            return Err(ShaderError::invalid_request("include path is empty"));
+        }
+        if path.contains('\0') {
+            return Err(ShaderError::invalid_request(
+                "include path contains nul byte",
+            ));
+        }
 
         if path.starts_with("//") {
             return Err(ShaderError::invalid_request("include path is unc path"));
@@ -69,7 +87,8 @@ impl IncludePath {
             return Err(ShaderError::invalid_request("include path is absolute"));
         }
 
-        if path.as_str().has_windows_drive_prefix() {
+        let path_bytes = path.as_bytes();
+        if path_bytes.len() >= 2 && path_bytes[0].is_ascii_alphabetic() && path_bytes[1] == b':' {
             return Err(ShaderError::invalid_request(
                 "include path has drive prefix",
             ));
@@ -81,13 +100,13 @@ impl IncludePath {
             ));
         }
 
-        Ok(Self(path))
+        Ok(Self(SmolStr::new(path)))
     }
 
     /// Returns the include path as a string slice.
     #[must_use]
     pub fn as_str(&self) -> &str {
-        &self.0
+        self.0.as_str()
     }
 }
 
@@ -112,7 +131,7 @@ impl<'de> serde::Deserialize<'de> for IncludePath {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[repr(transparent)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-pub struct ComboName(String);
+pub struct ComboName(SmolStr);
 
 impl ComboName {
     /// Creates a validated combo name.
@@ -123,20 +142,49 @@ impl ComboName {
     /// identifier-like name.
     pub fn new(name: impl Into<String>) -> ShaderResult<Self> {
         let name = name.into();
-        name.as_str().validate_ascii_identifier("combo name")?;
-        Ok(Self(name))
+        if name.is_empty() {
+            return Err(ShaderError::invalid_request("combo name is empty"));
+        }
+        if name.contains('\0') {
+            return Err(ShaderError::invalid_request("combo name contains nul byte"));
+        }
+
+        let mut chars = name.chars();
+        let Some(first) = chars.next() else {
+            return Err(ShaderError::invalid_request("combo name is empty"));
+        };
+
+        if !(first == '_' || first.is_ascii_alphabetic()) {
+            return Err(ShaderError::invalid_request(
+                "combo name is not an ascii identifier",
+            ));
+        }
+
+        if chars.any(|character| !(character == '_' || character.is_ascii_alphanumeric())) {
+            return Err(ShaderError::invalid_request(
+                "combo name is not an ascii identifier",
+            ));
+        }
+
+        Ok(Self(SmolStr::new(name)))
     }
 
     /// Returns the combo name as provided.
     #[must_use]
     pub fn as_str(&self) -> &str {
-        &self.0
+        self.0.as_str()
     }
 
     /// Returns the normalized combo name used for duplicate detection.
     #[must_use]
     pub fn normalized(&self) -> String {
         self.0.to_ascii_lowercase()
+    }
+
+    /// Returns the normalized combo name as compact internal storage.
+    #[must_use]
+    pub fn normalized_compact(&self) -> SmolStr {
+        SmolStr::new(self.0.to_ascii_lowercase())
     }
 }
 
@@ -161,7 +209,7 @@ impl<'de> serde::Deserialize<'de> for ComboName {
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-pub struct ShaderSymbolName(String);
+pub struct ShaderSymbolName(SmolStr);
 
 impl ShaderSymbolName {
     /// Creates a validated shader symbol name.
@@ -172,20 +220,49 @@ impl ShaderSymbolName {
     /// non-identifier path segment.
     pub fn new(name: impl Into<String>) -> ShaderResult<Self> {
         let name = name.into();
-        name.as_str()
-            .validate_non_empty_no_nul("shader symbol name")?;
-
-        for segment in name.split('.') {
-            segment.validate_ascii_identifier("shader symbol name segment")?;
+        if name.is_empty() {
+            return Err(ShaderError::invalid_request("shader symbol name is empty"));
+        }
+        if name.contains('\0') {
+            return Err(ShaderError::invalid_request(
+                "shader symbol name contains nul byte",
+            ));
         }
 
-        Ok(Self(name))
+        for segment in name.split('.') {
+            if segment.is_empty() {
+                return Err(ShaderError::invalid_request(
+                    "shader symbol name segment is empty",
+                ));
+            }
+
+            let mut chars = segment.chars();
+            let Some(first) = chars.next() else {
+                return Err(ShaderError::invalid_request(
+                    "shader symbol name segment is empty",
+                ));
+            };
+
+            if !(first == '_' || first.is_ascii_alphabetic()) {
+                return Err(ShaderError::invalid_request(
+                    "shader symbol name segment is not an ascii identifier",
+                ));
+            }
+
+            if chars.any(|character| !(character == '_' || character.is_ascii_alphanumeric())) {
+                return Err(ShaderError::invalid_request(
+                    "shader symbol name segment is not an ascii identifier",
+                ));
+            }
+        }
+
+        Ok(Self(SmolStr::new(name)))
     }
 
     /// Returns the symbol name as a string slice.
     #[must_use]
     pub fn as_str(&self) -> &str {
-        &self.0
+        self.0.as_str()
     }
 }
 
@@ -343,52 +420,28 @@ impl<'de> serde::Deserialize<'de> for BindingIndex {
     }
 }
 
-/// String validation helpers shared by shader model newtypes.
-trait ShaderModelStrExt {
-    /// Validates that the string is a non-empty ASCII identifier-like token.
-    fn validate_ascii_identifier(&self, label: &str) -> ShaderResult<()>;
-    /// Returns whether the string starts with a Windows drive prefix.
-    fn has_windows_drive_prefix(&self) -> bool;
-}
+#[cfg(test)]
+mod tests {
+    use smol_str::SmolStr;
 
-impl ShaderModelStrExt for str {
-    fn validate_ascii_identifier(&self, label: &str) -> ShaderResult<()> {
-        self.validate_non_empty_no_nul(label)?;
+    use super::*;
 
-        let mut chars = self.chars();
-        let Some(first) = chars.next() else {
-            return Err(ShaderError::invalid_request(format!("{label} is empty")));
-        };
+    fn accepts_smol_str(_value: &SmolStr) {}
 
-        if !(first == '_' || first.is_ascii_alphabetic()) {
-            return Err(ShaderError::invalid_request(format!(
-                "{label} is not an ascii identifier"
-            )));
-        }
+    #[test]
+    fn identifier_like_newtypes_use_compact_storage() {
+        let ShaderName(shader_name) = ShaderName::new("effects/generic").expect("valid name");
+        accepts_smol_str(&shader_name);
 
-        if chars.any(|character| !(character == '_' || character.is_ascii_alphanumeric())) {
-            return Err(ShaderError::invalid_request(format!(
-                "{label} is not an ascii identifier"
-            )));
-        }
+        let IncludePath(include_path) =
+            IncludePath::new("common/shared.glsl").expect("valid include path");
+        accepts_smol_str(&include_path);
 
-        Ok(())
-    }
+        let ComboName(combo_name) = ComboName::new("HAS_ALPHA").expect("valid combo");
+        accepts_smol_str(&combo_name);
 
-    fn has_windows_drive_prefix(&self) -> bool {
-        let bytes = self.as_bytes();
-        bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
-    }
-}
-
-/// Owned string helpers used before model validation.
-trait ShaderModelStringExt {
-    /// Normalizes Windows path separators to forward slashes.
-    fn normalize_separators(self) -> Self;
-}
-
-impl ShaderModelStringExt for String {
-    fn normalize_separators(self) -> Self {
-        self.replace('\\', "/")
+        let ShaderSymbolName(symbol_name) =
+            ShaderSymbolName::new("GlobalUniforms.g_Mvp").expect("valid symbol");
+        accepts_smol_str(&symbol_name);
     }
 }

@@ -429,117 +429,73 @@ impl VertexArgument<'_> {
             ShaderVertexInput::new(
                 self.argument.name.as_deref().unwrap_or_default(),
                 location,
-                VertexArgumentFormat {
-                    module: self.module,
-                    ty: self.argument.ty,
-                }
-                .format()?,
+                self.vertex_format()?,
             )
         }))
     }
-}
 
-/// Vertex format helper for Naga types.
-struct VertexArgumentFormat<'module> {
-    /// Module that owns the type.
-    module: &'module naga::Module,
-    /// Type handle to classify.
-    ty: naga::Handle<naga::Type>,
-}
-
-impl VertexArgumentFormat<'_> {
     /// Returns the renderer-neutral vertex input format.
-    fn format(&self) -> ShaderResult<VertexFormat> {
-        match self.module.types[self.ty].inner {
-            naga::TypeInner::Scalar(scalar) => Ok(VertexScalarFormat::try_from(scalar)?.format()),
+    fn vertex_format(&self) -> ShaderResult<VertexFormat> {
+        match self.module.types[self.argument.ty].inner {
+            naga::TypeInner::Scalar(scalar) => {
+                let kind = Self::vertex_scalar_kind(scalar)?;
+                Ok(match kind {
+                    naga::ScalarKind::Float => VertexFormat::R32Sfloat,
+                    naga::ScalarKind::Uint => VertexFormat::R32Uint,
+                    naga::ScalarKind::Sint => VertexFormat::R32Sint,
+                    naga::ScalarKind::Bool
+                    | naga::ScalarKind::AbstractInt
+                    | naga::ScalarKind::AbstractFloat => unreachable!(),
+                })
+            }
             naga::TypeInner::Vector { size, scalar } => {
-                Ok(VertexVectorFormat::try_from((size, scalar))?.format())
+                let kind = Self::vertex_scalar_kind(scalar)?;
+                Ok(match (kind, size) {
+                    (naga::ScalarKind::Float, naga::VectorSize::Bi) => VertexFormat::R32G32Sfloat,
+                    (naga::ScalarKind::Float, naga::VectorSize::Tri) => {
+                        VertexFormat::R32G32B32Sfloat
+                    }
+                    (naga::ScalarKind::Float, naga::VectorSize::Quad) => {
+                        VertexFormat::R32G32B32A32Sfloat
+                    }
+                    (naga::ScalarKind::Uint, naga::VectorSize::Bi) => VertexFormat::R32G32Uint,
+                    (naga::ScalarKind::Uint, naga::VectorSize::Tri) => VertexFormat::R32G32B32Uint,
+                    (naga::ScalarKind::Uint, naga::VectorSize::Quad) => {
+                        VertexFormat::R32G32B32A32Uint
+                    }
+                    (naga::ScalarKind::Sint, naga::VectorSize::Bi) => VertexFormat::R32G32Sint,
+                    (naga::ScalarKind::Sint, naga::VectorSize::Tri) => VertexFormat::R32G32B32Sint,
+                    (naga::ScalarKind::Sint, naga::VectorSize::Quad) => {
+                        VertexFormat::R32G32B32A32Sint
+                    }
+                    (
+                        naga::ScalarKind::Bool
+                        | naga::ScalarKind::AbstractInt
+                        | naga::ScalarKind::AbstractFloat,
+                        _,
+                    ) => unreachable!(),
+                })
             }
             _ => Err(ShaderError::Reflection {
                 message: "unsupported vertex input format".to_owned(),
             }),
         }
     }
-}
 
-/// Renderer-neutral format for one scalar vertex input.
-struct VertexScalarFormat {
-    /// Naga scalar kind for the input.
-    kind: naga::ScalarKind,
-}
-
-impl TryFrom<naga::Scalar> for VertexScalarFormat {
-    type Error = ShaderError;
-
-    fn try_from(scalar: naga::Scalar) -> Result<Self, Self::Error> {
+    /// Returns the supported scalar kind for a vertex input component.
+    fn vertex_scalar_kind(scalar: naga::Scalar) -> ShaderResult<naga::ScalarKind> {
         if scalar.width == 4
             && matches!(
                 scalar.kind,
                 naga::ScalarKind::Float | naga::ScalarKind::Uint | naga::ScalarKind::Sint
             )
         {
-            return Ok(Self { kind: scalar.kind });
+            return Ok(scalar.kind);
         }
 
         Err(ShaderError::Reflection {
             message: "unsupported vertex input format".to_owned(),
         })
-    }
-}
-
-impl VertexScalarFormat {
-    /// Returns the renderer-neutral format for this scalar.
-    const fn format(&self) -> VertexFormat {
-        match self.kind {
-            naga::ScalarKind::Float => VertexFormat::R32Sfloat,
-            naga::ScalarKind::Uint => VertexFormat::R32Uint,
-            naga::ScalarKind::Sint => VertexFormat::R32Sint,
-            naga::ScalarKind::Bool
-            | naga::ScalarKind::AbstractInt
-            | naga::ScalarKind::AbstractFloat => unreachable!(),
-        }
-    }
-}
-
-/// Renderer-neutral format for one vector vertex input.
-struct VertexVectorFormat {
-    /// Naga vector width.
-    size: naga::VectorSize,
-    /// Naga scalar kind for the input.
-    kind: naga::ScalarKind,
-}
-
-impl TryFrom<(naga::VectorSize, naga::Scalar)> for VertexVectorFormat {
-    type Error = ShaderError;
-
-    fn try_from((size, scalar): (naga::VectorSize, naga::Scalar)) -> Result<Self, Self::Error> {
-        Ok(Self {
-            size,
-            kind: VertexScalarFormat::try_from(scalar)?.kind,
-        })
-    }
-}
-
-impl VertexVectorFormat {
-    /// Returns the renderer-neutral format for this vector.
-    const fn format(&self) -> VertexFormat {
-        match (self.kind, self.size) {
-            (naga::ScalarKind::Float, naga::VectorSize::Bi) => VertexFormat::R32G32Sfloat,
-            (naga::ScalarKind::Float, naga::VectorSize::Tri) => VertexFormat::R32G32B32Sfloat,
-            (naga::ScalarKind::Float, naga::VectorSize::Quad) => VertexFormat::R32G32B32A32Sfloat,
-            (naga::ScalarKind::Uint, naga::VectorSize::Bi) => VertexFormat::R32G32Uint,
-            (naga::ScalarKind::Uint, naga::VectorSize::Tri) => VertexFormat::R32G32B32Uint,
-            (naga::ScalarKind::Uint, naga::VectorSize::Quad) => VertexFormat::R32G32B32A32Uint,
-            (naga::ScalarKind::Sint, naga::VectorSize::Bi) => VertexFormat::R32G32Sint,
-            (naga::ScalarKind::Sint, naga::VectorSize::Tri) => VertexFormat::R32G32B32Sint,
-            (naga::ScalarKind::Sint, naga::VectorSize::Quad) => VertexFormat::R32G32B32A32Sint,
-            (
-                naga::ScalarKind::Bool
-                | naga::ScalarKind::AbstractInt
-                | naga::ScalarKind::AbstractFloat,
-                _,
-            ) => unreachable!(),
-        }
     }
 }
 

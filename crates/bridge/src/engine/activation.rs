@@ -261,13 +261,14 @@ impl SceneDescBuilderExt for SceneDescBuilder {
             .map(crate::config::wallpaper::MonitorRender::parse_scaling_mode)
             .unwrap_or_default();
         let scaling_factor = render_override.map_or(1.0, |render| render.scaling_factor);
-        let supports_property_overrides = wallpaper.r#type.eq_ignore_ascii_case("scene")
-            || wallpaper.r#type.eq_ignore_ascii_case("web");
+        let supports_property_overrides = context.wallpaper.r#type.eq_ignore_ascii_case("scene")
+            || context.wallpaper.r#type.eq_ignore_ascii_case("web");
         let property_override_json =
-            if !supports_property_overrides || wallpaper.property_overrides.is_empty() {
+            if !supports_property_overrides || context.wallpaper.property_overrides.is_empty() {
                 None
             } else {
-                let overrides = wallpaper
+                let overrides = context
+                    .wallpaper
                     .property_overrides
                     .iter()
                     .map(|(id, value)| (id.clone(), PropertyValue::from_json(value)))

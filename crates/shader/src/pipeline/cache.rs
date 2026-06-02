@@ -1,57 +1,20 @@
 use std::fmt::Write as _;
 
 use crate::{
-    ShaderCacheKey, ShaderProgramRequest, ShaderStageKind, ShaderTextureInfo,
-    legalize::LegalizedStageSource,
-    pipeline::revision::{COMPILER_OPTIONS_CACHE_SALT, ShaderPipelineRevision},
-    preprocess::PreprocessedStage,
+    ShaderCacheKey, ShaderStageKind, ShaderTextureInfo, legalize::CodegenStageSource,
+    pipeline::revision::COMPILER_OPTIONS_CACHE_SALT, preprocess::PreprocessedStage,
 };
 
 /// Stable cache-key builder.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub(super) struct CacheKeyBuilder {
     /// Deterministic FNV-1a 64-bit digest state.
     digest: StableDigest,
 }
 
-impl From<CacheKeySeed<'_>> for CacheKeyBuilder {
-    fn from(seed: CacheKeySeed<'_>) -> Self {
-        let mut builder = Self {
-            digest: StableDigest::default(),
-        };
-        builder.push("shader-pipeline-cache-v1");
-        builder.push_u64(seed.revision.value());
-        builder.push(seed.request.shader_name().as_str());
-        builder.push(match seed.request.target() {
-            crate::ShaderTarget::VulkanSpirv => "vulkan_spirv",
-        });
-        builder.push_cache_policy(seed.request.cache_policy());
-
-        for combo in seed.request.combos() {
-            builder.push("combo");
-            builder.push(combo.name().as_str());
-            builder.push(combo.value());
-        }
-        for texture in seed.request.textures() {
-            builder.push_texture(texture);
-        }
-        for property in seed.request.properties() {
-            builder.push("property");
-            builder.push(property.name().as_str());
-            builder.push_property_value(property.value());
-        }
-
-        builder
-    }
-}
-
 impl CacheKeyBuilder {
     /// Adds one preprocessed/legalized stage to the key.
-    pub(super) fn push_stage(
-        &mut self,
-        stage: &PreprocessedStage,
-        legalized: &LegalizedStageSource,
-    ) {
+    pub(super) fn push_stage(&mut self, stage: &PreprocessedStage, legalized: &CodegenStageSource) {
         self.push("stage");
         self.push(match stage.kind() {
             ShaderStageKind::Vertex => "vertex",
@@ -62,11 +25,14 @@ impl CacheKeyBuilder {
         self.push(COMPILER_OPTIONS_CACHE_SALT);
     }
 
-    /// Adds cache policy data.
-    fn push_cache_policy(&mut self, policy: &crate::ShaderCachePolicy) {
-        match policy {
-            crate::ShaderCachePolicy::Disabled => self.push("cache-disabled"),
-            crate::ShaderCachePolicy::Enabled { scene_id } => {
+    /// Adds cache strategy data.
+    pub(super) fn push_cache_strategy(
+        &mut self,
+        strategy: &crate::model::CompactShaderCacheStrategy,
+    ) {
+        match strategy {
+            crate::model::CompactShaderCacheStrategy::Disabled => self.push("cache-disabled"),
+            crate::model::CompactShaderCacheStrategy::Enabled { scene_id } => {
                 self.push("cache-enabled");
                 self.push(scene_id);
             }
@@ -74,7 +40,7 @@ impl CacheKeyBuilder {
     }
 
     /// Adds texture metadata.
-    fn push_texture(&mut self, texture: &ShaderTextureInfo) {
+    pub(super) fn push_texture(&mut self, texture: &ShaderTextureInfo) {
         self.push("texture");
         self.push_u64(u64::from(texture.slot().index()));
         self.push(if texture.is_present() {
@@ -99,7 +65,7 @@ impl CacheKeyBuilder {
     }
 
     /// Adds one project property value.
-    fn push_property_value(&mut self, value: &crate::PropertyValue) {
+    pub(super) fn push_property_value(&mut self, value: &crate::PropertyValue) {
         match value {
             crate::PropertyValue::String(value) => {
                 self.push("string");
@@ -110,8 +76,26 @@ impl CacheKeyBuilder {
                 self.push(&value.to_bits().to_string());
             }
             crate::PropertyValue::Bool(value) => self.push(if *value { "true" } else { "false" }),
+            crate::PropertyValue::Vec2(value) => {
+                self.push("vec2");
+                for component in value {
+                    self.push(&component.to_bits().to_string());
+                }
+            }
             crate::PropertyValue::Vec3(value) => {
                 self.push("vec3");
+                for component in value {
+                    self.push(&component.to_bits().to_string());
+                }
+            }
+            crate::PropertyValue::Vec4(value) => {
+                self.push("vec4");
+                for component in value {
+                    self.push(&component.to_bits().to_string());
+                }
+            }
+            crate::PropertyValue::Matrix4(value) => {
+                self.push("matrix4");
                 for component in value {
                     self.push(&component.to_bits().to_string());
                 }
@@ -121,13 +105,13 @@ impl CacheKeyBuilder {
     }
 
     /// Adds a string with a length delimiter.
-    fn push(&mut self, value: &str) {
+    pub(super) fn push(&mut self, value: &str) {
         self.digest.push_usize(value.len());
         self.digest.push_bytes(value.as_bytes());
     }
 
     /// Adds an integer.
-    fn push_u64(&mut self, value: u64) {
+    pub(super) fn push_u64(&mut self, value: u64) {
         self.digest.push_bytes(&value.to_le_bytes());
     }
 
@@ -137,15 +121,6 @@ impl CacheKeyBuilder {
         let _result = write!(&mut value, "{:016x}", self.digest.finish());
         ShaderCacheKey::new(value)
     }
-}
-
-/// Request data used to seed a cache key.
-#[derive(Clone, Copy, Debug)]
-pub(super) struct CacheKeySeed<'request> {
-    /// Shader pipeline revision.
-    pub(super) revision: ShaderPipelineRevision,
-    /// Request whose stable fields seed the cache key.
-    pub(super) request: &'request ShaderProgramRequest,
 }
 
 /// Deterministic FNV-1a 64-bit digest used for generated cache keys.

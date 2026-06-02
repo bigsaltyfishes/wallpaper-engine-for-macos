@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::{ShaderError, ShaderReflection, ShaderResult, TextureSlot};
+use crate::{ShaderError, ShaderReflection, ShaderResult, ShaderSymbolName, TextureSlot};
 
 /// Merges stage reflection records with descriptor stage-mask unioning.
 #[derive(Debug, Default)]
@@ -19,10 +19,20 @@ impl ReflectionMerger {
     /// Appends one reflected stage payload.
     pub(super) fn push(&mut self, reflection: &ShaderReflection) -> ShaderResult<()> {
         for descriptor in reflection.descriptor_bindings() {
-            let key = DescriptorKey::from(descriptor);
+            let key = DescriptorKey {
+                set: descriptor.set().set(),
+                binding: descriptor.binding().binding(),
+                kind: match descriptor.kind() {
+                    crate::ShaderDescriptorKind::UniformBuffer => "uniform_buffer",
+                    crate::ShaderDescriptorKind::SampledImage => "sampled_image",
+                    crate::ShaderDescriptorKind::CombinedImageSampler => "combined_image_sampler",
+                    crate::ShaderDescriptorKind::Sampler => "sampler",
+                },
+                name: descriptor.symbol_name().clone(),
+            };
             if let Some(existing) = self.descriptors.get_mut(&key) {
                 *existing = crate::ShaderDescriptorBinding::new(
-                    existing.name().to_owned(),
+                    existing.name(),
                     existing.set(),
                     existing.binding(),
                     existing.kind(),
@@ -35,7 +45,11 @@ impl ReflectionMerger {
         }
 
         for block in reflection.uniform_blocks() {
-            let key = BlockKey::from(block);
+            let key = BlockKey {
+                set: block.set().set(),
+                binding: block.binding().binding(),
+                name: block.symbol_name().clone(),
+            };
             if let Some(existing) = self.uniform_blocks.get(&key) {
                 if existing != block {
                     return Err(ShaderError::invalid_request(format!(
@@ -95,23 +109,7 @@ struct DescriptorKey {
     /// Descriptor kind label.
     kind: &'static str,
     /// Descriptor name.
-    name: String,
-}
-
-impl From<&crate::ShaderDescriptorBinding> for DescriptorKey {
-    fn from(binding: &crate::ShaderDescriptorBinding) -> Self {
-        Self {
-            set: binding.set().set(),
-            binding: binding.binding().binding(),
-            kind: match binding.kind() {
-                crate::ShaderDescriptorKind::UniformBuffer => "uniform_buffer",
-                crate::ShaderDescriptorKind::SampledImage => "sampled_image",
-                crate::ShaderDescriptorKind::CombinedImageSampler => "combined_image_sampler",
-                crate::ShaderDescriptorKind::Sampler => "sampler",
-            },
-            name: binding.name().to_owned(),
-        }
-    }
+    name: ShaderSymbolName,
 }
 
 /// Stable uniform block merge key.
@@ -122,15 +120,69 @@ struct BlockKey {
     /// Descriptor binding index.
     binding: u32,
     /// Block name.
-    name: String,
+    name: ShaderSymbolName,
 }
 
-impl From<&crate::ShaderUniformBlock> for BlockKey {
-    fn from(block: &crate::ShaderUniformBlock) -> Self {
-        Self {
-            set: block.set().set(),
-            binding: block.binding().binding(),
-            name: block.name().to_owned(),
-        }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{BindingIndex, BindingSet, ShaderDescriptorKind, ShaderStageMask};
+
+    #[test]
+    fn descriptor_key_extracts_stable_merge_fields() {
+        let descriptor = crate::ShaderDescriptorBinding::new(
+            "g_Texture0",
+            BindingSet::new(1).expect("valid set"),
+            BindingIndex::new(2).expect("valid binding"),
+            ShaderDescriptorKind::SampledImage,
+            ShaderStageMask::new(false, true),
+            4,
+        )
+        .expect("descriptor should be valid");
+
+        assert_eq!(
+            DescriptorKey {
+                set: descriptor.set().set(),
+                binding: descriptor.binding().binding(),
+                kind: match descriptor.kind() {
+                    crate::ShaderDescriptorKind::UniformBuffer => "uniform_buffer",
+                    crate::ShaderDescriptorKind::SampledImage => "sampled_image",
+                    crate::ShaderDescriptorKind::CombinedImageSampler => "combined_image_sampler",
+                    crate::ShaderDescriptorKind::Sampler => "sampler",
+                },
+                name: descriptor.symbol_name().clone(),
+            },
+            DescriptorKey {
+                set: 1,
+                binding: 2,
+                kind: "sampled_image",
+                name: ShaderSymbolName::new("g_Texture0").expect("valid symbol name"),
+            }
+        );
+    }
+
+    #[test]
+    fn block_key_extracts_stable_merge_fields() {
+        let block = crate::ShaderUniformBlock::new(
+            "GlobalUniforms",
+            BindingSet::new(3).expect("valid set"),
+            BindingIndex::new(5).expect("valid binding"),
+            64,
+            Box::new([]),
+        )
+        .expect("block should be valid");
+
+        assert_eq!(
+            BlockKey {
+                set: block.set().set(),
+                binding: block.binding().binding(),
+                name: block.symbol_name().clone(),
+            },
+            BlockKey {
+                set: 3,
+                binding: 5,
+                name: ShaderSymbolName::new("GlobalUniforms").expect("valid symbol name"),
+            }
+        );
     }
 }

@@ -1,9 +1,6 @@
 //! Shader diagnostic records.
 
-use super::{
-    SourceSpan,
-    report::{MietteReport, ReportContext},
-};
+use super::{SourceSpan, report::MietteReport};
 use crate::model::ShaderStageKind;
 
 /// Diagnostic information produced while handling a shader.
@@ -12,7 +9,7 @@ use crate::model::ShaderStageKind;
 pub struct ShaderDiagnostic {
     /// Shader stage associated with the diagnostic, when known.
     stage: Option<ShaderStageKind>,
-    /// Pipeline or legalization pass associated with the diagnostic.
+    /// Pipeline or codegen pass associated with the diagnostic.
     pass: Option<String>,
     /// Source range associated with the diagnostic.
     span: Option<SourceSpan>,
@@ -46,7 +43,7 @@ impl ShaderDiagnostic {
         self
     }
 
-    /// Sets the legalization or pipeline pass context.
+    /// Sets the codegen or pipeline pass context.
     #[must_use]
     pub fn with_pass(mut self, pass: impl Into<String>) -> Self {
         self.pass = Some(pass.into());
@@ -107,10 +104,38 @@ impl ShaderDiagnostic {
     /// Renders this diagnostic with `miette` using optional source text.
     #[must_use]
     pub fn to_miette_report(&self, source: Option<&str>) -> String {
-        MietteReport::from(ReportContext {
-            diagnostic: self,
-            source: self.generated_source.as_deref().or(source),
-        })
+        let source = self.generated_source.as_deref().or(source).map(|source| {
+            miette::NamedSource::new(
+                self.generated_source_path()
+                    .unwrap_or("generated/shader.glsl"),
+                source.to_owned(),
+            )
+            .with_language("glsl")
+        });
+        let label = self.span().map(|span| {
+            miette::LabeledSpan::new_primary_with_span(
+                self.pass().map(ToOwned::to_owned),
+                (span.start(), span.end().saturating_sub(span.start())),
+            )
+        });
+        let help_parts = [
+            self.stage().map(|stage| format!("stage: {stage:?}")),
+            self.pass().map(|pass| format!("pass: {pass}")),
+            self.generated_source_path()
+                .map(|path| format!("source: {path}")),
+        ];
+        let help = help_parts
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        MietteReport {
+            message: self.message().to_owned(),
+            help: (!help.is_empty()).then_some(help),
+            source,
+            label,
+        }
         .render()
     }
 }

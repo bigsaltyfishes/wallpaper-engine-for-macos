@@ -1,12 +1,14 @@
 use shader::{
     ShaderCompiler, ShaderError, ShaderStageKind,
     compile::NagaCompiler,
-    legalize::{LegalizedStageSource, Legalizer},
+    legalize::{Codegen, CodegenStageSource},
     syntax::ShaderModule,
 };
 
 const SPIRV_MAGIC: u32 = 0x0723_0203;
 const SPIRV_OP_FNEGATE: u16 = 127;
+const SPIRV_OP_VECTOR_TIMES_MATRIX: u16 = 144;
+const SPIRV_OP_MATRIX_TIMES_VECTOR: u16 = 145;
 
 #[test]
 fn compiles_legalized_vertex_shader_to_spirv() {
@@ -52,6 +54,41 @@ void main() {
 }
 
 #[test]
+fn hlsl_mul_mvp_transform_emits_matrix_times_vector_spirv() {
+    let source_text = r"attribute vec3 a_Position;
+uniform mat4 g_ModelViewProjectionMatrix;
+void main() {
+    gl_Position = mul(vec4(a_Position, 1.0), g_ModelViewProjectionMatrix);
+}
+";
+    let module = ShaderModule::parse(ShaderStageKind::Vertex, source_text).expect("module parses");
+    let source = Codegen
+        .legalize(&module)
+        .expect("HLSL mul vertex shader legalizes");
+
+    assert!(
+        source
+            .source()
+            .contains("gl_Position = ((g_ModelViewProjectionMatrix) * (vec4(a_Position, 1.0)));"),
+        "{}",
+        source.source()
+    );
+
+    let artifact = NagaCompiler
+        .compile_stage(ShaderStageKind::Vertex, &source)
+        .expect("legalized HLSL mul vertex shader should compile");
+
+    assert!(
+        spirv_contains_opcode(artifact.stage().spirv(), SPIRV_OP_MATRIX_TIMES_VECTOR),
+        "MVP transform should match known-good shader-cache/proper SPIR-V OpMatrixTimesVector"
+    );
+    assert!(
+        !spirv_contains_opcode(artifact.stage().spirv(), SPIRV_OP_VECTOR_TIMES_MATRIX),
+        "MVP transform must not regress to OpVectorTimesMatrix"
+    );
+}
+
+#[test]
 fn compiles_legacy_vertex_shader_with_array_varying_output() {
     let source_text = r"attribute vec3 a_Position;
 attribute vec2 a_TexCoord;
@@ -66,7 +103,7 @@ void main() {
 }
 ";
     let module = ShaderModule::parse(ShaderStageKind::Vertex, source_text).expect("module parses");
-    let source = Legalizer
+    let source = Codegen
         .legalize(&module)
         .expect("array varying shader legalizes");
 
@@ -120,7 +157,7 @@ void main() {
 ";
     let module =
         ShaderModule::parse(ShaderStageKind::Fragment, source_text).expect("module parses");
-    let source = Legalizer
+    let source = Codegen
         .legalize(&module)
         .expect("scalar expression vector max shader legalizes");
 
@@ -171,8 +208,8 @@ void main() {
     assert!(diagnostic.span().is_some());
 }
 
-fn legalized_source(stage: ShaderStageKind, source: &str) -> LegalizedStageSource {
-    LegalizedStageSource::new(stage, source.to_owned(), Box::from([]))
+fn legalized_source(stage: ShaderStageKind, source: &str) -> CodegenStageSource {
+    CodegenStageSource::new(stage, source.to_owned(), Box::from([]))
 }
 
 fn spirv_contains_opcode(words: &[u32], opcode: u16) -> bool {

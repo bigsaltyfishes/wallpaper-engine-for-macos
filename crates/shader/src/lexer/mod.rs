@@ -1,46 +1,41 @@
-//! Borrowed token stream for Wallpaper Engine shader sources.
+//! Primitive Logos lexer for Wallpaper Engine shader sources.
 
 use logos::Logos;
+use smol_str::SmolStr;
 
-use crate::{ShaderDiagnostic, ShaderError, ShaderResult, SourceSpan};
+use crate::{
+    ShaderDiagnostic, ShaderError, ShaderResult, SourceSpan,
+    tokenizer::{LiteralValue, OperatorType, Token, TokenStream, TypedToken},
+};
 
-/// One token borrowed from a shader source buffer.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Token<'src> {
-    /// Token kind and borrowed source text where useful.
-    pub kind: TokenKind<'src>,
-    /// Byte span in the original source.
-    pub span: SourceSpan,
-}
+/// Primitive token producer at the Logos boundary.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Lexer;
 
-/// Borrowed shader token stream.
-pub type TokenStream<'src> = Vec<Token<'src>>;
-
-/// Construction methods for borrowed shader token streams.
-pub trait TokenStreamExt<'src>: Sized {
-    /// Lexes a shader source into borrowed tokens with byte spans.
+impl Lexer {
+    /// Tokenizes a shader source into lifetime-free typed tokens with byte
+    /// spans.
     ///
     /// # Errors
     ///
     /// Returns a parse error when an input byte range cannot be represented as
     /// a valid [`SourceSpan`].
-    fn lex(source: &'src str) -> ShaderResult<Self>;
-}
-
-impl<'src> TokenStreamExt<'src> for TokenStream<'src> {
-    fn lex(source: &'src str) -> ShaderResult<Self> {
+    pub fn tokenize(source: &str) -> ShaderResult<TokenStream> {
         let mut lexer = RawToken::lexer(source);
         let (lower, _) = lexer.size_hint();
-        let mut tokens = Self::with_capacity(lower);
+        let mut tokens = Vec::with_capacity(lower);
         let mut diagnostics = Vec::new();
 
         while let Some(raw_result) = lexer.next() {
             let range = lexer.span();
             match raw_result {
-                Ok(raw) => tokens.push(Token {
-                    kind: raw.into(),
-                    span: SourceSpan::new(range.start, range.end)?,
-                }),
+                Ok(raw) => {
+                    let span = SourceSpan::new(range.start, range.end)?;
+                    match raw.into_typed() {
+                        RawTypedToken::Token(kind) => tokens.push(Token::new(kind, span)),
+                        RawTypedToken::Discard => {}
+                    }
+                }
                 Err(()) => {
                     diagnostics.push(
                         ShaderDiagnostic::new("unrecognized shader token")
@@ -51,7 +46,7 @@ impl<'src> TokenStreamExt<'src> for TokenStream<'src> {
         }
 
         if diagnostics.is_empty() {
-            Ok(tokens)
+            Ok(TokenStream::new(tokens))
         } else {
             Err(ShaderError::Parse {
                 diagnostics: diagnostics.into_boxed_slice(),
@@ -60,81 +55,10 @@ impl<'src> TokenStreamExt<'src> for TokenStream<'src> {
     }
 }
 
-/// Lightweight token categories used by the shader syntax model.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TokenKind<'src> {
-    /// Wallpaper Engine line annotation such as `[COMBO]` or JSON metadata.
-    Annotation(&'src str),
-    /// Ordinary line or block comment.
-    Comment(&'src str),
-    /// Preprocessor directive line.
-    Directive(&'src str),
-    /// Identifier or keyword text.
-    Identifier(&'src str),
-    /// Numeric literal text.
-    Number(&'src str),
-    /// String literal text.
-    StringLiteral(&'src str),
-    /// `{`.
-    LeftBrace,
-    /// `}`.
-    RightBrace,
-    /// `(`.
-    LeftParen,
-    /// `)`.
-    RightParen,
-    /// `;`.
-    Semicolon,
-    /// `,`.
-    Comma,
-    /// Any other single punctuation/operator character.
-    Punctuation(char),
-}
-
-impl<'src> TokenKind<'src> {
-    /// Returns identifier or keyword text when this token is an identifier.
-    #[must_use]
-    pub const fn identifier_text(self) -> Option<&'src str> {
-        match self {
-            Self::Identifier(text) => Some(text),
-            _ => None,
-        }
-    }
-
-    /// Returns whether this token is an ordinary source comment.
-    #[must_use]
-    pub const fn is_comment(self) -> bool {
-        matches!(self, Self::Comment(_))
-    }
-
-    /// Returns whether this token is a declaration modifier rather than a
-    /// declaration type or name.
-    #[must_use]
-    pub const fn is_declaration_modifier(self) -> bool {
-        let Self::Identifier(text) = self else {
-            return false;
-        };
-
-        matches!(
-            text.as_bytes(),
-            b"lowp"
-                | b"mediump"
-                | b"highp"
-                | b"flat"
-                | b"smooth"
-                | b"noperspective"
-                | b"centroid"
-                | b"sample"
-                | b"invariant"
-                | b"const"
-        )
-    }
-}
-
-/// Raw logos token categories before conversion into public token kinds.
+/// Raw Logos token categories before conversion into typed tokens.
 #[derive(Logos, Clone, Copy, Debug, Eq, PartialEq)]
 #[logos(skip r"[ \t\r\n\f]+")]
-enum RawToken<'src> {
+pub enum RawToken<'src> {
     /// Wallpaper Engine annotation line captured from a comment token.
     #[regex(
         r"//[ \t]*(\[[A-Z0-9_]+\]|\{)[^\n\r]*",
@@ -184,12 +108,6 @@ enum RawToken<'src> {
     /// `}`.
     #[token("}")]
     RightBrace,
-    /// `(`.
-    #[token("(")]
-    LeftParen,
-    /// `)`.
-    #[token(")")]
-    RightParen,
     /// `;`.
     #[token(";")]
     Semicolon,
@@ -197,27 +115,57 @@ enum RawToken<'src> {
     #[token(",")]
     Comma,
 
-    /// Any remaining single punctuation or operator character.
+    /// GLSL operator lexeme. Longer operators are matched before their
+    /// prefixes by Logos' longest-match rule.
+    #[regex(r"(\+\+|--|<<=|>>=|\+=|-=|\*=|/=|%=|&=|\^=|\|=|<<|>>|<=|>=|==|!=|&&|\|\||\^\^|[+\-*/%=!<>&|^~?:.]|\(|\)|\[|\])", |lexer| lexer.slice())]
+    Operator(&'src str),
+
+    /// Any remaining single punctuation character.
     #[regex(r".", |lexer| lexer.slice().chars().next(), priority = 0)]
-    Punctuation(char),
+    RawGlyph(char),
 }
 
-impl<'src> From<RawToken<'src>> for TokenKind<'src> {
-    fn from(raw: RawToken<'src>) -> Self {
-        match raw {
-            RawToken::Annotation(text) => Self::Annotation(text),
-            RawToken::Comment(text) => Self::Comment(text),
-            RawToken::Directive(text) => Self::Directive(text),
-            RawToken::Identifier(text) => Self::Identifier(text),
-            RawToken::Number(text) => Self::Number(text),
-            RawToken::StringLiteral(text) => Self::StringLiteral(text),
-            RawToken::LeftBrace => Self::LeftBrace,
-            RawToken::RightBrace => Self::RightBrace,
-            RawToken::LeftParen => Self::LeftParen,
-            RawToken::RightParen => Self::RightParen,
-            RawToken::Semicolon => Self::Semicolon,
-            RawToken::Comma => Self::Comma,
-            RawToken::Punctuation(value) => Self::Punctuation(value),
+impl RawToken<'_> {
+    /// Converts a raw lexeme into a lifetime-free typed token when the lexeme
+    /// is retained after lexing.
+    fn into_typed(self) -> RawTypedToken {
+        match self {
+            Self::Annotation(text) => {
+                RawTypedToken::Token(TypedToken::Annotation(SmolStr::new(text)))
+            }
+            Self::Comment(_) => RawTypedToken::Discard,
+            Self::Directive(text) => {
+                RawTypedToken::Token(TypedToken::Directive(SmolStr::new(text)))
+            }
+            Self::Identifier(text) => RawTypedToken::Token(TypedToken::from_identifier_text(text)),
+            Self::Number(text) => RawTypedToken::Token(TypedToken::Literal(LiteralValue::Number(
+                SmolStr::new(text),
+            ))),
+            Self::StringLiteral(text) => {
+                RawTypedToken::Token(TypedToken::StringLiteral(SmolStr::new(text)))
+            }
+            Self::LeftBrace => RawTypedToken::Token(TypedToken::LeftBrace),
+            Self::RightBrace => RawTypedToken::Token(TypedToken::RightBrace),
+            Self::Semicolon => RawTypedToken::Token(TypedToken::Semicolon),
+            Self::Comma => RawTypedToken::Token(TypedToken::Comma),
+            Self::Operator(text) => RawTypedToken::Token(OperatorType::parse(text).map_or_else(
+                || TypedToken::Other(SmolStr::new(text)),
+                TypedToken::Operator,
+            )),
+            Self::RawGlyph(glyph) => {
+                let mut encoded = [0; 4];
+                RawTypedToken::Token(TypedToken::Other(SmolStr::new(
+                    glyph.encode_utf8(&mut encoded),
+                )))
+            }
         }
     }
+}
+
+/// Result of converting a raw Logos token into tokenizer-stage output.
+enum RawTypedToken {
+    /// A typed token that should be retained.
+    Token(TypedToken),
+    /// Trivia or comments that should not enter the token stream.
+    Discard,
 }

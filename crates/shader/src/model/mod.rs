@@ -31,6 +31,9 @@ pub use reflection::{
     ShaderUniformBlock, ShaderUniformMember, ShaderVertexInput, VertexFormat,
 };
 pub use request::{ShaderProgramRequest, ShaderProgramRequestBuilder};
-pub use stage::{ShaderCachePolicy, ShaderStageKind, ShaderStageSource, ShaderTarget};
+pub use stage::{
+    CompactShaderCacheStrategy, ShaderCacheStrategy, ShaderStageKind, ShaderStageSource,
+    ShaderTarget,
+};
 pub use texture::{ShaderTextureInfo, TextureComponentState, TextureFormatHint, TextureSlot};
 pub use traits::{ShaderCompiler, ShaderReflector};

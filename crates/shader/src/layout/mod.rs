@@ -1,4 +1,4 @@
-//! Shader interface locations and descriptor bindings used during legalization.
+//! Shader interface locations and descriptor bindings used during codegen.
 
 use crate::{BindingIndex, BindingSet, LocationIndex, ShaderResult};
 

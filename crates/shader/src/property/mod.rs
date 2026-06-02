@@ -2,13 +2,15 @@
 
 use std::fmt;
 
+use smol_str::SmolStr;
+
 use crate::{ShaderError, ShaderResult};
 
 /// Name of a project property visible to shader material bindings.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-pub struct PropertyName(String);
+pub struct PropertyName(SmolStr);
 
 impl PropertyName {
     /// Creates a validated property name.
@@ -18,14 +20,21 @@ impl PropertyName {
     /// Returns an error when the name is empty or contains a NUL byte.
     pub fn new(name: impl Into<String>) -> ShaderResult<Self> {
         let name = name.into();
-        name.as_str().validate_non_empty_no_nul("property name")?;
-        Ok(Self(name))
+        if name.is_empty() {
+            return Err(ShaderError::invalid_request("property name is empty"));
+        }
+        if name.contains('\0') {
+            return Err(ShaderError::invalid_request(
+                "property name contains nul byte",
+            ));
+        }
+        Ok(Self(SmolStr::new(name)))
     }
 
     /// Returns the property name as a string slice.
     #[must_use]
     pub fn as_str(&self) -> &str {
-        &self.0
+        self.0.as_str()
     }
 }
 
@@ -56,8 +65,14 @@ pub enum PropertyValue {
     Number(f32),
     /// Boolean value.
     Bool(bool),
+    /// Two-component numeric vector.
+    Vec2([f32; 2]),
     /// Three-component numeric vector.
     Vec3([f32; 3]),
+    /// Four-component numeric vector.
+    Vec4([f32; 4]),
+    /// Four-by-four numeric matrix in source order.
+    Matrix4([f32; 16]),
     /// Parsed nullable value that is rejected by active shader requests.
     None,
 }
@@ -93,24 +108,13 @@ impl ProjectPropertyBinding {
     }
 }
 
-/// Shared validation for non-empty strings that must not contain NUL bytes.
-pub(crate) trait NonEmptyNoNulStrExt {
-    /// Validates a labeled string for model constructors.
-    fn validate_non_empty_no_nul(&self, label: &str) -> ShaderResult<()>;
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-impl NonEmptyNoNulStrExt for str {
-    fn validate_non_empty_no_nul(&self, label: &str) -> ShaderResult<()> {
-        if self.is_empty() {
-            return Err(ShaderError::invalid_request(format!("{label} is empty")));
-        }
-
-        if self.contains('\0') {
-            return Err(ShaderError::invalid_request(format!(
-                "{label} contains nul byte"
-            )));
-        }
-
-        Ok(())
+    #[test]
+    fn property_name_uses_compact_storage() {
+        let PropertyName(name) = PropertyName::new("opacity").expect("valid property");
+        let _: &SmolStr = &name;
     }
 }

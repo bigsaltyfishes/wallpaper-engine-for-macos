@@ -1,5 +1,5 @@
 use super::{CompiledStageArtifact, ShaderReflection, ShaderStageKind};
-use crate::{ShaderResult, legalize::LegalizedStageSource};
+use crate::{ShaderResult, legalize::CodegenStageSource};
 
 /// Trait for shader compiler backends.
 pub trait ShaderCompiler {
@@ -14,7 +14,7 @@ pub trait ShaderCompiler {
     fn compile_stage(
         &self,
         stage: ShaderStageKind,
-        source: &LegalizedStageSource,
+        source: &CodegenStageSource,
     ) -> ShaderResult<CompiledStageArtifact<Self::Module>>;
 }
 

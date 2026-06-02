@@ -1,11 +1,135 @@
 use shader::{
     BindingIndex, BindingSet, ComboName, CompiledShaderStage, CompiledStageArtifact,
-    InMemoryShaderSourceProvider, IncludePath, LocationIndex, ProjectPropertyBinding, PropertyName,
-    PropertyValue, ShaderCachePolicy, ShaderComboValue, ShaderCompiler, ShaderDiagnostic,
-    ShaderError, ShaderName, ShaderProgramRequest, ShaderReflection, ShaderReflector, ShaderResult,
-    ShaderSourceProvider, ShaderStageKind, ShaderStageSource, ShaderTarget, ShaderTextureInfo,
-    TextureFormatHint, TextureSlot, legalize::LegalizedStageSource,
+    DefaultUniformValue, InMemoryShaderSourceProvider, IncludePath, LocationIndex, MaterialAlias,
+    ProjectPropertyBinding, PropertyName, PropertyValue, ShaderCacheStrategy, ShaderComboValue,
+    ShaderCompiler, ShaderDescriptorBinding, ShaderDescriptorKind, ShaderDiagnostic, ShaderError,
+    ShaderName, ShaderProgramRequest, ShaderReflection, ShaderReflector, ShaderResult,
+    ShaderSourceProvider, ShaderStageKind, ShaderStageMask, ShaderStageSource, ShaderSymbolName,
+    ShaderTarget, ShaderTextureInfo, ShaderUniformBlock, ShaderUniformMember, ShaderVertexInput,
+    SourceSpan, TextureFormatHint, TextureSlot, VertexFormat, legalize::CodegenStageSource,
+    syntax::FunctionDecl,
 };
+
+struct IntoOnlyString(String);
+
+impl From<IntoOnlyString> for String {
+    fn from(value: IntoOnlyString) -> Self {
+        value.0
+    }
+}
+
+fn into_only(value: &str) -> IntoOnlyString {
+    IntoOnlyString(value.to_owned())
+}
+
+#[test]
+fn combo_name_normalized_returns_string_for_api_compatibility() {
+    let normalized: String = ComboName::new("HAS_ALPHA")
+        .expect("valid combo")
+        .normalized();
+
+    assert_eq!(normalized, "has_alpha");
+}
+
+#[test]
+fn cache_strategy_scene_id_accepts_string_for_api_compatibility() {
+    let strategy = ShaderCacheStrategy::Enabled {
+        scene_id: "3611439897".to_owned(),
+    };
+    let ShaderCacheStrategy::Enabled { scene_id } = strategy else {
+        panic!("cache strategy should be enabled");
+    };
+
+    let _: String = scene_id;
+}
+
+#[test]
+fn function_decl_new_accepts_legacy_six_argument_signature() {
+    let parameters_span = SourceSpan::new(10, 10).expect("valid parameter span");
+    let signature_span = SourceSpan::new(0, 11).expect("valid signature span");
+    let body_span = SourceSpan::new(12, 14).expect("valid body span");
+    let source_span = SourceSpan::new(0, 14).expect("valid source span");
+
+    let function = FunctionDecl::new(
+        "void",
+        "main",
+        parameters_span,
+        signature_span,
+        body_span,
+        source_span,
+    );
+
+    assert_eq!(function.return_type(), "void");
+    assert_eq!(function.name(), "main");
+    assert_eq!(function.name_span(), signature_span);
+}
+
+#[test]
+fn public_string_constructors_accept_into_string_inputs_for_api_compatibility() {
+    let shader_name = ShaderName::new(into_only("effects\\genericimage"))
+        .expect("valid shader name from Into<String>");
+    assert_eq!(shader_name.as_str(), "effects/genericimage");
+
+    let combo_name = ComboName::new(into_only("HAS_ALPHA")).expect("valid combo name");
+    assert_eq!(combo_name.as_str(), "HAS_ALPHA");
+
+    let symbol_name =
+        ShaderSymbolName::new(into_only("GlobalUniforms.g_Mvp")).expect("valid symbol name");
+    assert_eq!(symbol_name.as_str(), "GlobalUniforms.g_Mvp");
+
+    let property_name = PropertyName::new(into_only("opacity")).expect("valid property name");
+    assert_eq!(property_name.as_str(), "opacity");
+
+    let combo_value = ShaderComboValue::new(combo_name, into_only("1"));
+    assert_eq!(combo_value.value(), "1");
+
+    let alias = MaterialAlias::new(into_only("brightness"), into_only("g_Brightness"))
+        .expect("valid alias");
+    assert_eq!(alias.material(), "brightness");
+    assert_eq!(alias.uniform(), "g_Brightness");
+
+    let default_uniform =
+        DefaultUniformValue::new(into_only("g_Exposure"), PropertyValue::Number(1.0))
+            .expect("valid default uniform");
+    assert_eq!(default_uniform.uniform(), "g_Exposure");
+
+    let set = BindingSet::new(0).expect("valid set");
+    let binding = BindingIndex::new(0).expect("valid binding");
+    let stages = ShaderStageMask::single(ShaderStageKind::Fragment);
+    let descriptor = ShaderDescriptorBinding::new(
+        into_only("g_Texture0"),
+        set,
+        binding,
+        ShaderDescriptorKind::SampledImage,
+        stages,
+        1,
+    )
+    .expect("valid descriptor binding");
+    assert_eq!(descriptor.name(), "g_Texture0");
+
+    let member = ShaderUniformMember::new(into_only("g_Color"), 0, 16, 4, 1, 0)
+        .expect("valid uniform member");
+    assert_eq!(member.name(), "g_Color");
+
+    let block = ShaderUniformBlock::new(
+        into_only("GlobalUniforms"),
+        set,
+        binding,
+        16,
+        Box::from([member]),
+    )
+    .expect("valid uniform block");
+    assert_eq!(block.name(), "GlobalUniforms");
+
+    let location = LocationIndex::new(0).expect("valid location");
+    let vertex_input = ShaderVertexInput::new(
+        into_only("a_Position"),
+        location,
+        VertexFormat::R32G32B32Sfloat,
+    )
+    .expect("valid vertex input");
+    assert_eq!(vertex_input.name(), "a_Position");
+}
 
 #[test]
 fn builds_typed_shader_request_and_reads_include_source() {
@@ -36,7 +160,7 @@ fn builds_typed_shader_request_and_reads_include_source() {
         .texture(texture)
         .property(property)
         .target(ShaderTarget::VulkanSpirv)
-        .cache_policy(ShaderCachePolicy::Enabled {
+        .cache_strategy(ShaderCacheStrategy::Enabled {
             scene_id: "3611439897".to_owned(),
         })
         .build()
@@ -49,8 +173,8 @@ fn builds_typed_shader_request_and_reads_include_source() {
     assert_eq!(request.properties().len(), 1);
     assert_eq!(request.target(), ShaderTarget::VulkanSpirv);
     assert_eq!(
-        request.cache_policy(),
-        &ShaderCachePolicy::Enabled {
+        request.cache_strategy(),
+        &ShaderCacheStrategy::Enabled {
             scene_id: "3611439897".to_owned()
         }
     );
@@ -120,6 +244,42 @@ fn builder_rejects_duplicate_combos_unless_replaced() {
 
     assert_eq!(request.combos().len(), 1);
     assert_eq!(request.combos()[0].value(), "1");
+}
+
+#[test]
+fn replacement_combos_preserve_first_seen_order() {
+    let request = ShaderProgramRequest::builder(
+        ShaderName::new("effects/genericimage").expect("valid shader name"),
+    )
+    .stage(ShaderStageSource::new(
+        ShaderStageKind::Vertex,
+        "void main() {}",
+    ))
+    .stage(ShaderStageSource::new(
+        ShaderStageKind::Fragment,
+        "void main() {}",
+    ))
+    .combo(ShaderComboValue::new(
+        ComboName::new("FIRST").expect("valid combo"),
+        "0",
+    ))
+    .combo(ShaderComboValue::new(
+        ComboName::new("SECOND").expect("valid combo"),
+        "1",
+    ))
+    .replace_combo(ShaderComboValue::new(
+        ComboName::new("first").expect("valid combo"),
+        "2",
+    ))
+    .build()
+    .expect("replacement should be valid");
+
+    let combos = request.combos();
+
+    assert_eq!(combos[0].name().as_str(), "first");
+    assert_eq!(combos[0].value(), "2");
+    assert_eq!(combos[1].name().as_str(), "SECOND");
+    assert_eq!(combos[1].value(), "1");
 }
 
 #[test]
@@ -301,7 +461,7 @@ fn compiler_trait_returns_artifact_with_backend_module() {
         fn compile_stage(
             &self,
             stage: ShaderStageKind,
-            _source: &LegalizedStageSource,
+            _source: &CodegenStageSource,
         ) -> ShaderResult<CompiledStageArtifact<Self::Module>> {
             let compiled_stage =
                 CompiledShaderStage::new(stage, Box::from([0x0723_0203]), None, Box::from([]));
@@ -313,7 +473,7 @@ fn compiler_trait_returns_artifact_with_backend_module() {
         }
     }
 
-    let source = LegalizedStageSource::new(
+    let source = CodegenStageSource::new(
         ShaderStageKind::Fragment,
         "void main() {}".to_owned(),
         Box::from([]),
@@ -334,10 +494,11 @@ mod serde_invariants {
     use serde_test::{Token, assert_de_tokens, assert_de_tokens_error};
     use shader::{
         BindingIndex, BindingSet, ComboName, IncludePath, LocationIndex, ProjectPropertyBinding,
-        PropertyName, PropertyValue, ShaderCachePolicy, ShaderComboValue, ShaderDescriptorBinding,
-        ShaderDescriptorKind, ShaderName, ShaderProgramRequest, ShaderReflection, ShaderStageKind,
-        ShaderStageMask, ShaderStageSource, ShaderTarget, ShaderUniformBlock, ShaderUniformMember,
-        ShaderVertexInput, SourceSpan, TextureFormatHint, TextureSlot, VertexFormat,
+        PropertyName, PropertyValue, ShaderCacheStrategy, ShaderComboValue,
+        ShaderDescriptorBinding, ShaderDescriptorKind, ShaderName, ShaderProgramRequest,
+        ShaderReflection, ShaderStageKind, ShaderStageMask, ShaderStageSource, ShaderTarget,
+        ShaderUniformBlock, ShaderUniformMember, ShaderVertexInput, SourceSpan, TextureFormatHint,
+        TextureSlot, VertexFormat,
     };
 
     #[derive(Debug, Deserialize)]
@@ -420,9 +581,9 @@ mod serde_invariants {
                     name: "ShaderTarget",
                     variant: "VulkanSpirv",
                 },
-                Token::Str("cache_policy"),
+                Token::Str("cache_strategy"),
                 Token::UnitVariant {
-                    name: "ShaderCachePolicy",
+                    name: "ShaderCacheStrategy",
                     variant: "Disabled",
                 },
                 Token::StructEnd,
@@ -476,7 +637,7 @@ mod serde_invariants {
             PropertyValue::Number(0.75),
         ))
         .target(ShaderTarget::VulkanSpirv)
-        .cache_policy(ShaderCachePolicy::Disabled)
+        .cache_strategy(ShaderCacheStrategy::Disabled)
         .build()
         .expect("request should be valid");
 
@@ -573,9 +734,9 @@ mod serde_invariants {
                     name: "ShaderTarget",
                     variant: "VulkanSpirv",
                 },
-                Token::Str("cache_policy"),
+                Token::Str("cache_strategy"),
                 Token::UnitVariant {
-                    name: "ShaderCachePolicy",
+                    name: "ShaderCacheStrategy",
                     variant: "Disabled",
                 },
                 Token::StructEnd,

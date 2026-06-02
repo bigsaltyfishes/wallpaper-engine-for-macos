@@ -5,9 +5,9 @@ mod cache;
 /// Request-level pipeline orchestration.
 mod context;
 /// Preprocessed and parsed stage inputs.
-mod inputs;
+pub mod inputs;
 /// Cross-stage interface analysis and layout.
-mod interface;
+pub mod interface;
 /// Metadata merge and request combo augmentation.
 mod metadata;
 /// Reflection merge across compiled stages.

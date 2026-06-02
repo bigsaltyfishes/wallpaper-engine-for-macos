@@ -3,14 +3,20 @@
 use std::fmt::Write as _;
 
 use super::{
-    ConditionalError, ConditionalExpression, ConditionalMode, ConditionalStack, DefineDirective,
-    DirectiveHandlingContext, DirectiveLine, DirectiveLocation, IncludeDirective, MacroName,
-    MacroTable,
+    ConditionalError, ConditionalExpression, ConditionalMode, ConditionalStack, DirectiveLocation,
+    MacroName, MacroTable,
 };
 use crate::{
     IncludePath, ShaderDiagnostic, ShaderError, ShaderResult, ShaderSourceProvider,
     ShaderStageKind, SourceSpan, syntax::PreprocessorDirective,
 };
+
+/// Diagnostic for an include directive without a quoted path.
+const INCLUDE_PATH_ERROR: &str = "#include expects a quoted include path";
+/// Diagnostic for a define directive without a macro name.
+const DEFINE_NAME_ERROR: &str = "#define expects a macro name";
+/// Diagnostic for a define directive with an invalid macro name.
+const DEFINE_INVALID_NAME_ERROR: &str = "#define macro name is invalid";
 
 /// Preprocessed shader source for one stage.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -19,13 +25,37 @@ pub struct PreprocessedStage {
     kind: ShaderStageKind,
     /// Source after include and conditional preprocessing.
     source: String,
+    /// Contiguous leading object-like macro values visible to syntax facts.
+    macros: MacroTable,
 }
 
 impl PreprocessedStage {
     /// Creates preprocessed stage source.
     #[must_use]
     pub fn new(kind: ShaderStageKind, source: String) -> Self {
-        Self { kind, source }
+        let mut macros = MacroTable::new();
+        for line in source.lines() {
+            let trimmed = line.trim_start();
+            if !trimmed.starts_with('#') {
+                break;
+            }
+            let directive = PreprocessorDirective::from_token_text(trimmed, SourceSpan::default());
+            if !directive.is_define() {
+                break;
+            }
+            let Ok(Some(parts)) = directive.define_parts() else {
+                continue;
+            };
+            let name = parts.name_text();
+            if parts.has_explicit_value() && MacroName::parse(name).is_ok() {
+                macros.define(name, parts.value().as_str());
+            }
+        }
+        Self {
+            kind,
+            source,
+            macros,
+        }
     }
 
     /// Returns the shader stage kind.
@@ -39,6 +69,12 @@ impl PreprocessedStage {
     pub fn source(&self) -> &str {
         &self.source
     }
+
+    /// Returns contiguous leading object-like macro values.
+    #[must_use]
+    pub fn macros(&self) -> &MacroTable {
+        &self.macros
+    }
 }
 
 /// Stateful preprocessor for a single shader stage.
@@ -47,15 +83,15 @@ where
     P: ShaderSourceProvider + ?Sized,
 {
     /// Stage currently being preprocessed.
-    pub(super) stage: ShaderStageKind,
+    pub stage: ShaderStageKind,
     /// Source provider for resolving includes.
-    pub(super) source_provider: &'a P,
+    pub source_provider: &'a P,
     /// Macro values visible to conditionals.
-    pub(super) macros: MacroTable,
+    pub macros: MacroTable,
     /// Include stack used to reject recursive includes.
-    pub(super) include_stack: Vec<IncludePath>,
+    pub include_stack: Vec<IncludePath>,
     /// Conditional handling behavior for this preprocessing pass.
-    pub(super) conditional_mode: ConditionalMode,
+    pub conditional_mode: ConditionalMode,
 }
 
 impl<P> StagePreprocessor<'_, P>
@@ -108,22 +144,23 @@ where
             let trimmed = line.trim_start();
 
             if trimmed.starts_with('#') {
-                let mut handling = DirectiveHandlingContext {
-                    raw_line: line,
-                    output: &mut output,
-                    conditionals: &mut conditionals,
-                    location: DirectiveLocation {
+                let directive =
+                    PreprocessorDirective::from_token_text(trimmed, SourceSpan::default());
+                self.handle_directive(
+                    directive,
+                    line,
+                    &mut output,
+                    &mut conditionals,
+                    DirectiveLocation {
                         context,
                         line_number,
                     },
-                };
-                let syntax_directive =
-                    PreprocessorDirective::from_token_text(trimmed, SourceSpan::default());
-                self.handle_directive(DirectiveLine::from(syntax_directive), &mut handling)?;
+                )?;
                 continue;
             }
 
             if conditionals.is_active() || self.conditional_mode == ConditionalMode::Preserve {
+                let line = line.trim_end().strip_suffix('\\').unwrap_or(line);
                 writeln!(output, "{line}").map_err(|error| {
                     self.parse_error(format!("failed to write preprocessed source: {error}"))
                 })?;
@@ -149,102 +186,66 @@ where
     }
 
     /// Applies a single preprocessor directive line.
-    fn handle_directive(
+    fn handle_directive<'context>(
         &mut self,
-        directive: DirectiveLine<'_>,
-        handling: &mut DirectiveHandlingContext<'_, '_>,
+        directive: PreprocessorDirective<'_>,
+        raw_line: &str,
+        output: &mut String,
+        conditionals: &mut ConditionalStack<'context>,
+        location: DirectiveLocation<'context>,
     ) -> ShaderResult<()> {
-        let location = handling.location;
+        let context = location.context;
+        let line_number = location.line_number;
+        let preserve_directive = self.conditional_mode == ConditionalMode::Preserve
+            && !(directive.is_include() || directive.is_define() || directive.is_require());
 
-        match directive {
-            DirectiveLine::Include(include) => {
-                if handling.conditionals.is_active() {
-                    let path = IncludeDirective::try_from(include).map_err(|message| {
-                        self.parse_error_at(location.context, location.line_number, message)
-                    })?;
-                    let include_source = self.preprocess_include(
-                        path.path(),
-                        location.context,
-                        location.line_number,
-                    )?;
-                    handling.output.push_str(&include_source);
-                } else if self.conditional_mode == ConditionalMode::Preserve {
-                    writeln!(handling.output, "{}", handling.raw_line).map_err(|error| {
-                        self.parse_error(format!("failed to write preprocessed source: {error}"))
-                    })?;
-                }
-                Ok(())
+        if directive.is_include() {
+            if conditionals.is_active() {
+                let path = directive
+                    .include_path()
+                    .map_err(|message| self.parse_error_at(context, line_number, message))?
+                    .ok_or_else(|| self.parse_error_at(context, line_number, INCLUDE_PATH_ERROR))?;
+                let include_source = self.preprocess_include(&path, context, line_number)?;
+                output.push_str(&include_source);
+            } else if self.conditional_mode == ConditionalMode::Preserve {
+                writeln!(output, "{raw_line}").map_err(|error| {
+                    self.parse_error(format!("failed to write preprocessed source: {error}"))
+                })?;
             }
-            DirectiveLine::Define(define) => {
-                if handling.conditionals.is_active() {
-                    let define = DefineDirective::try_from(define).map_err(|message| {
-                        self.parse_error_at(location.context, location.line_number, message)
-                    })?;
-                    self.macros.define(define.name().as_str(), define.value());
-                    writeln!(handling.output, "#{}", directive.raw()).map_err(|error| {
-                        self.parse_error(format!("failed to write preprocessed source: {error}"))
-                    })?;
-                }
-                Ok(())
+        } else if directive.is_define() {
+            if conditionals.is_active() {
+                let parts = directive
+                    .define_parts()
+                    .map_err(|message| self.parse_error_at(context, line_number, message))?
+                    .ok_or_else(|| self.parse_error_at(context, line_number, DEFINE_NAME_ERROR))?;
+                let name = MacroName::parse(parts.name_text()).map_err(|_error| {
+                    self.parse_error_at(context, line_number, DEFINE_INVALID_NAME_ERROR)
+                })?;
+                self.macros.define(name.as_str(), parts.value().as_str());
+                writeln!(output, "#{}", directive.raw_text()).map_err(|error| {
+                    self.parse_error(format!("failed to write preprocessed source: {error}"))
+                })?;
             }
-            DirectiveLine::Ifdef(conditional) => self.handle_macro_condition(
-                conditional,
-                handling.conditionals,
-                location.context,
-                location.line_number,
-                false,
-            ),
-            DirectiveLine::Ifndef(conditional) => self.handle_macro_condition(
-                conditional,
-                handling.conditionals,
-                location.context,
-                location.line_number,
-                true,
-            ),
-            DirectiveLine::If(conditional) => self.handle_if_condition(
-                conditional,
-                handling.conditionals,
-                location.context,
-                location.line_number,
-            ),
-            DirectiveLine::Elif(conditional) => self.handle_elif_condition(
-                conditional,
-                handling.conditionals,
-                location.context,
-                location.line_number,
-            ),
-            DirectiveLine::Else(conditional) => self.handle_conditional_boundary(
-                conditional,
-                handling.conditionals,
-                location.context,
-                location.line_number,
-                "else",
-            ),
-            DirectiveLine::Endif(conditional) => self.handle_conditional_boundary(
-                conditional,
-                handling.conditionals,
-                location.context,
-                location.line_number,
-                "endif",
-            ),
-            DirectiveLine::Require(_require) => Ok(()),
-            DirectiveLine::Other(other) => {
-                if handling.conditionals.is_active() {
-                    writeln!(handling.output, "#{}", other.raw_text()).map_err(|error| {
-                        self.parse_error(format!("failed to write preprocessed source: {error}"))
-                    })?;
-                }
-                Ok(())
+        } else if let Some(conditional) = directive.conditional() {
+            if conditional.is_ifdef() {
+                self.handle_macro_condition(directive, conditionals, context, line_number, false)?;
+            } else if conditional.is_ifndef() {
+                self.handle_macro_condition(directive, conditionals, context, line_number, true)?;
+            } else if conditional.is_if() {
+                self.handle_if_condition(directive, conditionals, context, line_number)?;
+            } else if conditional.is_elif() {
+                self.handle_elif_condition(directive, conditionals, context, line_number)?;
+            } else {
+                self.handle_conditional_boundary(directive, conditionals, context, line_number)?;
             }
-        }?;
+        } else if !directive.is_require() && conditionals.is_active() {
+            writeln!(output, "#{}", directive.raw_text()).map_err(|error| {
+                self.parse_error(format!("failed to write preprocessed source: {error}"))
+            })?;
+        }
 
-        if self.conditional_mode == ConditionalMode::Preserve
-            && !matches!(
-                directive,
-                DirectiveLine::Include(_) | DirectiveLine::Define(_) | DirectiveLine::Require(_)
-            )
-        {
-            writeln!(handling.output, "{}", handling.raw_line).map_err(|error| {
+        if preserve_directive {
+            writeln!(output, "{raw_line}").map_err(|error| {
                 self.parse_error(format!("failed to write preprocessed source: {error}"))
             })?;
         }
@@ -253,16 +254,16 @@ where
     }
 
     /// Pushes an `#ifdef` or `#ifndef` frame.
-    fn handle_macro_condition<'src>(
+    fn handle_macro_condition<'context>(
         &self,
-        conditional: crate::syntax::PreprocessorDirective<'_>,
-        conditionals: &mut ConditionalStack<'src>,
-        context: SourceContext<'src>,
+        conditional: PreprocessorDirective<'_>,
+        conditionals: &mut ConditionalStack<'context>,
+        context: SourceContext<'context>,
         line_number: usize,
         negate: bool,
     ) -> ShaderResult<()> {
         let condition_active = if conditionals.is_active() {
-            let macro_name = MacroName::try_from(conditional.body_text())
+            let macro_name = MacroName::parse(conditional.body_text())
                 .map_err(|message| self.parse_error_at(context, line_number, message))?;
             self.macros.contains(macro_name.as_str()) ^ negate
         } else {
@@ -279,15 +280,15 @@ where
     }
 
     /// Pushes an `#if` expression frame.
-    fn handle_if_condition<'src>(
+    fn handle_if_condition<'context>(
         &self,
-        conditional: crate::syntax::PreprocessorDirective<'_>,
-        conditionals: &mut ConditionalStack<'src>,
-        context: SourceContext<'src>,
+        conditional: PreprocessorDirective<'_>,
+        conditionals: &mut ConditionalStack<'context>,
+        context: SourceContext<'context>,
         line_number: usize,
     ) -> ShaderResult<()> {
         let is_active = if conditionals.is_active() {
-            ConditionalExpression::try_from(conditional.body_text())
+            ConditionalExpression::parse(conditional.body_text())
                 .and_then(|expression| expression.evaluate(&self.macros))
                 .map_err(|message| self.parse_error_at(context, line_number, message))?
         } else {
@@ -304,18 +305,18 @@ where
     }
 
     /// Enters an `#elif` expression arm.
-    fn handle_elif_condition<'src>(
+    fn handle_elif_condition<'context>(
         &self,
-        conditional: crate::syntax::PreprocessorDirective<'_>,
-        conditionals: &mut ConditionalStack<'src>,
-        context: SourceContext<'src>,
+        conditional: PreprocessorDirective<'_>,
+        conditionals: &mut ConditionalStack<'context>,
+        context: SourceContext<'context>,
         line_number: usize,
     ) -> ShaderResult<()> {
         let should_evaluate = conditionals
             .should_evaluate_elif()
             .map_err(|error| self.conditional_error(context, line_number, error))?;
         let is_active = if should_evaluate {
-            ConditionalExpression::try_from(conditional.body_text())
+            ConditionalExpression::parse(conditional.body_text())
                 .and_then(|expression| expression.evaluate(&self.macros))
                 .map_err(|message| self.parse_error_at(context, line_number, message))?
         } else {
@@ -329,13 +330,13 @@ where
     /// Handles an `#else` or `#endif` stack transition.
     fn handle_conditional_boundary(
         &self,
-        conditional: crate::syntax::PreprocessorDirective<'_>,
+        conditional: PreprocessorDirective<'_>,
         conditionals: &mut ConditionalStack<'_>,
         context: SourceContext<'_>,
         line_number: usize,
-        directive_name: &str,
     ) -> ShaderResult<()> {
         if !conditional.body_text().is_empty() {
+            let directive_name = conditional.name_text();
             return Err(self.parse_error_at(
                 context,
                 line_number,
@@ -343,14 +344,18 @@ where
             ));
         }
 
-        let result = match directive_name {
-            "else" => conditionals.enter_else(),
-            "endif" => match conditionals.pop() {
-                Err(ConditionalError::UnmatchedEndif) => Ok(()),
-                Err(error) => Err(error),
-                result => result,
-            },
-            _ => Ok(()),
+        let result = if let Some(conditional) = conditional.conditional() {
+            match conditional.kind() {
+                crate::syntax::ConditionalDirectiveKind::Else => conditionals.enter_else(),
+                crate::syntax::ConditionalDirectiveKind::Endif => match conditionals.pop() {
+                    Err(ConditionalError::UnmatchedEndif) => Ok(()),
+                    Err(error) => Err(error),
+                    result => result,
+                },
+                _ => Ok(()),
+            }
+        } else {
+            Ok(())
         };
         result.map_err(|error| self.conditional_error(context, line_number, error))
     }
@@ -414,7 +419,7 @@ where
 
 /// Identifies whether diagnostics refer to root source or an include.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum SourceContext<'a> {
+pub enum SourceContext<'a> {
     /// Root shader stage source.
     Root,
     /// Source loaded through an include path.

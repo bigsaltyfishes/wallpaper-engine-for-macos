@@ -10,56 +10,17 @@ use miette::{
     SourceCode,
 };
 
-use super::ShaderDiagnostic;
-
-/// Borrowed source context used to create a miette report.
-#[derive(Clone, Copy, Debug)]
-pub(super) struct ReportContext<'a> {
-    /// Diagnostic data to render.
-    pub(super) diagnostic: &'a ShaderDiagnostic,
-    /// Generated source text used for span rendering.
-    pub(super) source: Option<&'a str>,
-}
-
 /// Owned `miette` diagnostic for one shader diagnostic entry.
 #[derive(Clone, Debug)]
 pub(super) struct MietteReport {
     /// Human-readable diagnostic message.
-    message: String,
+    pub message: String,
     /// Stage/pass context rendered as help text.
-    help: Option<String>,
+    pub help: Option<String>,
     /// Source text used for span rendering.
-    source: Option<NamedSource<String>>,
+    pub source: Option<NamedSource<String>>,
     /// Primary source label.
-    label: Option<LabeledSpan>,
-}
-
-impl From<ReportContext<'_>> for MietteReport {
-    fn from(context: ReportContext<'_>) -> Self {
-        let diagnostic = context.diagnostic;
-        let source = context.source.map(|source| {
-            NamedSource::new(
-                diagnostic
-                    .generated_source_path()
-                    .unwrap_or("generated/shader.glsl"),
-                source.to_owned(),
-            )
-            .with_language("glsl")
-        });
-        let label = diagnostic.span().map(|span| {
-            LabeledSpan::new_primary_with_span(
-                diagnostic.pass().map(ToOwned::to_owned),
-                (span.start(), span.end().saturating_sub(span.start())),
-            )
-        });
-
-        Self {
-            message: diagnostic.message().to_owned(),
-            help: DiagnosticHelp::from(diagnostic).into_option(),
-            source,
-            label,
-        }
-    }
+    pub label: Option<LabeledSpan>,
 }
 
 impl MietteReport {
@@ -109,32 +70,5 @@ impl Diagnostic for MietteReport {
         self.label
             .as_ref()
             .map(|label| Box::new(std::iter::once(label.clone())) as Box<dyn Iterator<Item = _>>)
-    }
-}
-
-/// Stage and pass context formatted for report help text.
-#[derive(Debug)]
-struct DiagnosticHelp(String);
-
-impl DiagnosticHelp {
-    /// Returns the help string when it contains context.
-    fn into_option(self) -> Option<String> {
-        (!self.0.is_empty()).then_some(self.0)
-    }
-}
-
-impl From<&ShaderDiagnostic> for DiagnosticHelp {
-    fn from(diagnostic: &ShaderDiagnostic) -> Self {
-        let mut parts = Vec::new();
-        if let Some(stage) = diagnostic.stage() {
-            parts.push(format!("stage: {stage:?}"));
-        }
-        if let Some(pass) = diagnostic.pass() {
-            parts.push(format!("pass: {pass}"));
-        }
-        if let Some(path) = diagnostic.generated_source_path() {
-            parts.push(format!("source: {path}"));
-        }
-        Self(parts.join(", "))
     }
 }

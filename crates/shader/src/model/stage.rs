@@ -53,7 +53,7 @@ pub enum ShaderTarget {
 /// Shader cache behavior for a request.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub enum ShaderCachePolicy {
+pub enum ShaderCacheStrategy {
     /// Do not read or write shader cache entries.
     #[default]
     Disabled,
@@ -62,4 +62,40 @@ pub enum ShaderCachePolicy {
         /// Scene identifier used as part of cache key construction.
         scene_id: String,
     },
+}
+
+/// Compact shader cache behavior used after request validation.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub enum CompactShaderCacheStrategy {
+    /// Do not read or write shader cache entries.
+    #[default]
+    Disabled,
+    /// Cache with the compact scene identifier.
+    Enabled {
+        /// Scene identifier used as part of cache key construction.
+        scene_id: smol_str::SmolStr,
+    },
+}
+
+impl CompactShaderCacheStrategy {
+    /// Returns the compact scene identifier when caching is enabled.
+    #[cfg(test)]
+    #[must_use]
+    pub const fn scene_id(&self) -> Option<&smol_str::SmolStr> {
+        match self {
+            Self::Disabled => None,
+            Self::Enabled { scene_id } => Some(scene_id),
+        }
+    }
+}
+
+impl From<&ShaderCacheStrategy> for CompactShaderCacheStrategy {
+    fn from(strategy: &ShaderCacheStrategy) -> Self {
+        match strategy {
+            ShaderCacheStrategy::Disabled => Self::Disabled,
+            ShaderCacheStrategy::Enabled { scene_id } => Self::Enabled {
+                scene_id: scene_id.into(),
+            },
+        }
+    }
 }

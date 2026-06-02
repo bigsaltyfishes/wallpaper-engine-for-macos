@@ -39,9 +39,37 @@ impl<'src> PreprocessorDirective<'src> {
         let kind = match name.as_str() {
             "include" => DirectiveKind::Include(IncludeDirective { name, body }),
             "define" => DirectiveKind::Define(DefineDirective { name, body }),
-            "if" | "ifdef" | "ifndef" | "elif" | "else" | "endif" => {
-                DirectiveKind::Conditional(ConditionalDirective { name, body })
-            }
+            "if" => DirectiveKind::Conditional(ConditionalDirective {
+                kind: ConditionalDirectiveKind::If,
+                name,
+                body,
+            }),
+            "ifdef" => DirectiveKind::Conditional(ConditionalDirective {
+                kind: ConditionalDirectiveKind::Ifdef,
+                name,
+                body,
+            }),
+            "ifndef" => DirectiveKind::Conditional(ConditionalDirective {
+                kind: ConditionalDirectiveKind::Ifndef,
+                name,
+                body,
+            }),
+            "elif" => DirectiveKind::Conditional(ConditionalDirective {
+                kind: ConditionalDirectiveKind::Elif,
+                name,
+                body,
+            }),
+            "else" => DirectiveKind::Conditional(ConditionalDirective {
+                kind: ConditionalDirectiveKind::Else,
+                name,
+                body,
+            }),
+            "endif" => DirectiveKind::Conditional(ConditionalDirective {
+                kind: ConditionalDirectiveKind::Endif,
+                name,
+                body,
+            }),
+            "require" => DirectiveKind::Require(RequireDirective { name, body }),
             _ => DirectiveKind::Other { name, body },
         };
 
@@ -100,16 +128,56 @@ impl<'src> PreprocessorDirective<'src> {
             return Err("#define expects a macro name");
         }
 
-        let (signature, value) =
-            body.split_once(char::is_whitespace)
-                .map_or((body, "1"), |(signature, value)| {
-                    let value = value.trim();
-                    (signature, if value.is_empty() { "1" } else { value })
-                });
+        let bytes = body.as_bytes();
+        let Some(first) = bytes.first().copied() else {
+            return Err("#define expects a macro name");
+        };
+        if !(first.is_ascii_alphabetic() || first == b'_') {
+            return Err("#define expects a macro name");
+        }
+        let mut signature_end = 1;
+        while bytes
+            .get(signature_end)
+            .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
+        {
+            signature_end += 1;
+        }
+        if bytes.get(signature_end) == Some(&b'(') {
+            let mut depth = 0usize;
+            while let Some(byte) = bytes.get(signature_end) {
+                match byte {
+                    b'(' => depth += 1,
+                    b')' => {
+                        depth = depth.checked_sub(1).ok_or("#define expects a macro name")?;
+                        signature_end += 1;
+                        if depth == 0 {
+                            break;
+                        }
+                        continue;
+                    }
+                    _ => {}
+                }
+                signature_end += 1;
+            }
+            if depth != 0 {
+                return Err("#define expects a macro name");
+            }
+        } else if body[signature_end..]
+            .chars()
+            .next()
+            .is_some_and(|character| !character.is_whitespace())
+        {
+            return Err("#define expects a macro name");
+        }
+        let signature = &body[..signature_end];
+        let value = body[signature_end..].trim();
+        let has_explicit_value = !value.is_empty();
+        let value = if has_explicit_value { value } else { "1" };
 
         Ok(Some(DefineDirectiveParts {
             signature: DirectiveBody::new(signature),
             value: DirectiveBody::new(value),
+            has_explicit_value,
         }))
     }
 
@@ -134,7 +202,7 @@ impl<'src> PreprocessorDirective<'src> {
     /// Returns whether this is a `#require` directive.
     #[must_use]
     pub fn is_require(&self) -> bool {
-        matches!(self.kind, DirectiveKind::Other { name, .. } if name.as_str().as_bytes() == b"require")
+        matches!(self.kind, DirectiveKind::Require(_))
     }
 
     /// Returns the directive source span.
@@ -168,6 +236,24 @@ impl SpannedSyntax for PreprocessorDirective<'_> {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::PreprocessorDirective;
+    use crate::SourceSpan;
+
+    #[test]
+    fn define_parts_rejects_adjacent_invalid_delimiter_after_name() {
+        let directive =
+            PreprocessorDirective::from_token_text("#define FOO-BAR 1", SourceSpan::default());
+
+        let error = directive
+            .define_parts()
+            .expect_err("adjacent invalid delimiter should reject macro name");
+
+        assert_eq!(error, "#define expects a macro name");
+    }
+}
+
 /// Semantic preprocessor directive categories.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DirectiveKind<'src> {
@@ -177,6 +263,8 @@ pub enum DirectiveKind<'src> {
     Define(DefineDirective<'src>),
     /// Conditional directive such as `#if`, `#ifdef`, or `#endif`.
     Conditional(ConditionalDirective<'src>),
+    /// Wallpaper Engine `#require` directive.
+    Require(RequireDirective<'src>),
     /// Any other preprocessor directive.
     Other {
         /// Directive keyword.
@@ -194,6 +282,7 @@ impl<'src> DirectiveKind<'src> {
             Self::Include(directive) => directive.name(),
             Self::Define(directive) => directive.name(),
             Self::Conditional(directive) => directive.name(),
+            Self::Require(directive) => directive.name(),
             Self::Other { name, .. } => name,
         }
     }
@@ -205,6 +294,7 @@ impl<'src> DirectiveKind<'src> {
             Self::Include(directive) => directive.body(),
             Self::Define(directive) => directive.body(),
             Self::Conditional(directive) => directive.body(),
+            Self::Require(directive) => directive.body(),
             Self::Other { body, .. } => body,
         }
     }
@@ -216,6 +306,7 @@ impl<'src> DirectiveKind<'src> {
             Self::Include(directive) => directive.raw(),
             Self::Define(directive) => directive.raw(),
             Self::Conditional(directive) => directive.raw(),
+            Self::Require(directive) => directive.raw(),
             Self::Other { name, .. } => name.raw(),
         }
     }
@@ -243,7 +334,7 @@ impl<'src> DirectiveKind<'src> {
     pub const fn include(self) -> Option<IncludeDirective<'src>> {
         match self {
             Self::Include(directive) => Some(directive),
-            Self::Define(_) | Self::Conditional(_) | Self::Other { .. } => None,
+            Self::Define(_) | Self::Conditional(_) | Self::Require(_) | Self::Other { .. } => None,
         }
     }
 
@@ -252,7 +343,7 @@ impl<'src> DirectiveKind<'src> {
     pub const fn define(self) -> Option<DefineDirective<'src>> {
         match self {
             Self::Define(directive) => Some(directive),
-            Self::Include(_) | Self::Conditional(_) | Self::Other { .. } => None,
+            Self::Include(_) | Self::Conditional(_) | Self::Require(_) | Self::Other { .. } => None,
         }
     }
 
@@ -261,7 +352,7 @@ impl<'src> DirectiveKind<'src> {
     pub const fn conditional(self) -> Option<ConditionalDirective<'src>> {
         match self {
             Self::Conditional(directive) => Some(directive),
-            Self::Include(_) | Self::Define(_) | Self::Other { .. } => None,
+            Self::Include(_) | Self::Define(_) | Self::Require(_) | Self::Other { .. } => None,
         }
     }
 }
@@ -351,6 +442,8 @@ pub struct DefineDirectiveParts<'src> {
     signature: DirectiveBody<'src>,
     /// Macro replacement text.
     value: DirectiveBody<'src>,
+    /// Whether the source directive had non-empty replacement text.
+    has_explicit_value: bool,
 }
 
 impl<'src> DefineDirectiveParts<'src> {
@@ -365,11 +458,90 @@ impl<'src> DefineDirectiveParts<'src> {
     pub const fn value(self) -> DirectiveBody<'src> {
         self.value
     }
+
+    /// Returns the byte offset of the replacement text within the directive
+    /// token text.
+    #[must_use]
+    pub fn value_offset_in(self, directive_text: &str) -> Option<usize> {
+        let value = self.value().as_str();
+        if value.is_empty() {
+            return None;
+        }
+        let text_start = directive_text.as_ptr().addr();
+        let value_start = value.as_ptr().addr();
+        (text_start..=text_start + directive_text.len())
+            .contains(&value_start)
+            .then_some(value_start - text_start)
+    }
+
+    /// Returns whether the source directive had non-empty replacement text.
+    #[must_use]
+    pub const fn has_explicit_value(self) -> bool {
+        self.has_explicit_value
+    }
+
+    /// Returns the macro identifier before any function-like parameter list.
+    #[must_use]
+    pub fn name_text(self) -> &'src str {
+        self.signature()
+            .as_str()
+            .split_once('(')
+            .map_or(self.signature().as_str(), |(name, _parameters)| name)
+    }
+
+    /// Returns the macro identifier when this is an object-like definition.
+    #[must_use]
+    pub fn object_like_name_text(self) -> Option<&'src str> {
+        let signature = self.signature().as_str();
+        (!signature.is_empty() && !signature.contains('(')).then_some(signature)
+    }
+
+    /// Returns a simple replacement spelling without token separators.
+    #[must_use]
+    pub fn simple_replacement_text(self) -> Option<&'src str> {
+        let value = self.value().as_str();
+        (!value.is_empty()
+            && value.chars().all(|character| {
+                character.is_ascii_alphanumeric() || matches!(character, '_' | '.' | '+' | '-')
+            }))
+        .then_some(value)
+    }
+}
+
+/// Parsed Wallpaper Engine `#require` directive syntax.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RequireDirective<'src> {
+    /// Directive keyword.
+    name: DirectiveName<'src>,
+    /// Require directive body.
+    body: DirectiveBody<'src>,
+}
+
+impl<'src> RequireDirective<'src> {
+    /// Returns the directive keyword.
+    #[must_use]
+    pub const fn name(self) -> DirectiveName<'src> {
+        self.name
+    }
+
+    /// Returns the directive body.
+    #[must_use]
+    pub const fn body(self) -> DirectiveBody<'src> {
+        self.body
+    }
+
+    /// Returns the directive text without the leading `#`.
+    #[must_use]
+    pub const fn raw(self) -> &'src str {
+        self.name.raw()
+    }
 }
 
 /// Parsed conditional preprocessor directive syntax.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ConditionalDirective<'src> {
+    /// Specific conditional directive keyword.
+    kind: ConditionalDirectiveKind,
     /// Directive keyword.
     name: DirectiveName<'src>,
     /// Conditional directive body.
@@ -377,6 +549,12 @@ pub struct ConditionalDirective<'src> {
 }
 
 impl<'src> ConditionalDirective<'src> {
+    /// Returns the specific conditional directive keyword.
+    #[must_use]
+    pub const fn kind(self) -> ConditionalDirectiveKind {
+        self.kind
+    }
+
     /// Returns the directive keyword.
     #[must_use]
     pub const fn name(self) -> DirectiveName<'src> {
@@ -398,38 +576,55 @@ impl<'src> ConditionalDirective<'src> {
     /// Returns whether this is `#ifdef`.
     #[must_use]
     pub fn is_ifdef(self) -> bool {
-        self.name.as_str().as_bytes() == b"ifdef"
+        self.kind == ConditionalDirectiveKind::Ifdef
     }
 
     /// Returns whether this is `#ifndef`.
     #[must_use]
     pub fn is_ifndef(self) -> bool {
-        self.name.as_str().as_bytes() == b"ifndef"
+        self.kind == ConditionalDirectiveKind::Ifndef
     }
 
     /// Returns whether this is `#if`.
     #[must_use]
     pub fn is_if(self) -> bool {
-        self.name.as_str().as_bytes() == b"if"
+        self.kind == ConditionalDirectiveKind::If
     }
 
     /// Returns whether this is `#elif`.
     #[must_use]
     pub fn is_elif(self) -> bool {
-        self.name.as_str().as_bytes() == b"elif"
+        self.kind == ConditionalDirectiveKind::Elif
     }
 
     /// Returns whether this is `#else`.
     #[must_use]
     pub fn is_else(self) -> bool {
-        self.name.as_str().as_bytes() == b"else"
+        self.kind == ConditionalDirectiveKind::Else
     }
 
     /// Returns whether this is `#endif`.
     #[must_use]
     pub fn is_endif(self) -> bool {
-        self.name.as_str().as_bytes() == b"endif"
+        self.kind == ConditionalDirectiveKind::Endif
     }
+}
+
+/// Specific conditional preprocessor directive.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ConditionalDirectiveKind {
+    /// `#if`.
+    If,
+    /// `#ifdef`.
+    Ifdef,
+    /// `#ifndef`.
+    Ifndef,
+    /// `#elif`.
+    Elif,
+    /// `#else`.
+    Else,
+    /// `#endif`.
+    Endif,
 }
 
 /// Preprocessor directive keyword.

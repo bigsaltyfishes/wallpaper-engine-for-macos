@@ -1,7 +1,8 @@
 use shader::{
     ComboName, InMemoryShaderSourceProvider, IncludePath, ShaderComboValue, ShaderError,
     ShaderName, ShaderProgramRequest, ShaderStageKind, ShaderStageSource,
-    preprocess::PreprocessContext, syntax::ShaderModule,
+    preprocess::{MacroTable, PreprocessContext},
+    syntax::ShaderModule,
 };
 
 fn include(path: &str) -> IncludePath {
@@ -38,6 +39,19 @@ fn parse_error_message(error: &ShaderError) -> String {
             .join("\n"),
         other => other.to_string(),
     }
+}
+
+#[test]
+fn macro_tables_with_same_values_compare_equal_across_insertion_order() {
+    let mut first = MacroTable::new();
+    first.define("FIRST", "1");
+    first.define("SECOND", "2");
+
+    let mut second = MacroTable::new();
+    second.define("SECOND", "2");
+    second.define("FIRST", "1");
+
+    assert_eq!(first, second);
 }
 
 #[test]
@@ -147,6 +161,30 @@ void main() {}
     assert!(source.contains("#define BlendLinearDodgef(base, blend) (base + blend)"));
     assert!(source.contains("float blend_macro_defined = 1.0;"));
     assert!(!source.contains("float blend_macro_defined = 0.0;"));
+}
+
+#[test]
+fn rejects_object_like_define_with_adjacent_invalid_delimiter() {
+    let provider = InMemoryShaderSourceProvider::new();
+    let request = request_with_fragment(
+        r#"
+#define FOO-BAR 1
+#ifdef FOO
+float foo_defined = 1.0;
+#else
+float foo_defined = 0.0;
+#endif
+void main() {}
+"#,
+        &[],
+    );
+
+    let error = PreprocessContext::new(&request, &provider)
+        .preprocess()
+        .expect_err("invalid define signature should fail");
+    let message = parse_error_message(&error);
+
+    assert!(message.contains("#define expects a macro name"));
 }
 
 #[test]
@@ -286,6 +324,16 @@ void main() {}
 }
 
 #[test]
+fn leading_macro_facts_ignore_non_define_directives_with_define_prefix() {
+    let stage = shader::preprocess::PreprocessedStage::new(
+        ShaderStageKind::Fragment,
+        "#defineVALUE 4\nuniform vec4 offsets[VALUE];\n".to_owned(),
+    );
+
+    assert_eq!(stage.macros().value("VALUE"), None);
+}
+
+#[test]
 fn typed_directives_feed_include_and_define_preprocessing() {
     let source = concat!(
         "#include \"common/math.glsl\" // keep URL-like paths intact\n",
@@ -325,6 +373,69 @@ fn typed_directives_feed_include_and_define_preprocessing() {
     assert!(fragment.source().contains("float from_include = 1.0;"));
     assert!(fragment.source().contains("#define VALUE 7"));
     assert!(fragment.source().contains("float x = VALUE;"));
+}
+
+#[test]
+fn removes_non_directive_line_continuation_backslashes() {
+    let provider = InMemoryShaderSourceProvider::new();
+    let request = request_with_fragment(
+        concat!(
+            "float joined(float x, float y) {\n",
+            "    return x \\\n",
+            "         + y;\n",
+            "}\n",
+            "void main() {}\n",
+        ),
+        &[],
+    );
+
+    let program = PreprocessContext::new(&request, &provider)
+        .preprocess()
+        .expect("preprocesses line continuations");
+    let source = program
+        .stage(ShaderStageKind::Fragment)
+        .expect("fragment stage exists")
+        .source();
+
+    assert!(source.contains("return x \n"));
+    assert!(!source.contains("\\\n"));
+}
+
+#[test]
+fn conditional_expressions_tolerate_trailing_semicolon_terminators() {
+    let provider = InMemoryShaderSourceProvider::new();
+    let request = request_with_fragment(
+        r#"
+#if MODE == 1;
+float first = 1.0;
+#else
+float first = 0.0;
+#endif
+#if MODE == 0
+float second = 0.0;
+#elif MODE == 1;
+float second = 1.0;
+#else
+float second = 2.0;
+#endif
+void main() {}
+"#,
+        &[combo("MODE", "1")],
+    );
+
+    let program = PreprocessContext::new(&request, &provider)
+        .preprocess()
+        .expect("preprocesses semicolon-terminated conditional expressions");
+    let source = program
+        .stage(ShaderStageKind::Fragment)
+        .expect("fragment stage exists")
+        .source();
+
+    assert!(source.contains("float first = 1.0;"));
+    assert!(source.contains("float second = 1.0;"));
+    assert!(!source.contains("float first = 0.0;"));
+    assert!(!source.contains("float second = 0.0;"));
+    assert!(!source.contains("float second = 2.0;"));
 }
 
 #[test]

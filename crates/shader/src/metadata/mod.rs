@@ -6,5 +6,3 @@ mod annotation_json;
 mod builder;
 /// Metadata traversal over parsed shader modules.
 mod extractor;
-
-pub use extractor::ShaderModuleMetadataExt;

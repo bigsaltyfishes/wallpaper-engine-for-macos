@@ -8,7 +8,7 @@ use crate::{
 
 /// Metadata response JSON.
 #[derive(Debug, serde::Serialize)]
-pub(in crate::compat::ffi) struct MetadataJson<'program> {
+pub(super) struct MetadataJson<'program> {
     /// Combo values.
     combos: Vec<ComboJson<'program>>,
     /// Material aliases.
@@ -127,8 +127,14 @@ enum PropertyValueJson<'program> {
     Number(f32),
     /// Boolean value.
     Bool(bool),
+    /// Two-component vector value.
+    Vec2([f32; 2]),
     /// Three-component vector value.
     Vec3([f32; 3]),
+    /// Four-component vector value.
+    Vec4([f32; 4]),
+    /// Four-by-four matrix value.
+    Matrix4([f32; 16]),
     /// Missing value.
     None,
 }
@@ -139,7 +145,10 @@ impl<'program> From<&'program PropertyValue> for PropertyValueJson<'program> {
             PropertyValue::String(value) => Self::String(value),
             PropertyValue::Number(value) => Self::Number(*value),
             PropertyValue::Bool(value) => Self::Bool(*value),
+            PropertyValue::Vec2(value) => Self::Vec2(*value),
             PropertyValue::Vec3(value) => Self::Vec3(*value),
+            PropertyValue::Vec4(value) => Self::Vec4(*value),
+            PropertyValue::Matrix4(value) => Self::Matrix4(*value),
             PropertyValue::None => Self::None,
         }
     }
@@ -147,7 +156,7 @@ impl<'program> From<&'program PropertyValue> for PropertyValueJson<'program> {
 
 /// Reflection response JSON.
 #[derive(Debug, serde::Serialize)]
-pub(in crate::compat::ffi) struct ReflectionJson<'program> {
+pub(super) struct ReflectionJson<'program> {
     /// Descriptor bindings.
     descriptor_bindings: Vec<DescriptorBindingJson<'program>>,
     /// Uniform blocks.

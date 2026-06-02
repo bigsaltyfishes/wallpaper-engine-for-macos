@@ -1,7 +1,7 @@
 use shader::{
     ComboName, DefaultUniformValue, PropertyValue, ShaderComboValue, ShaderMetadata,
     ShaderStageKind, ShaderTextureInfo, TextureComponentState, TextureFormatHint, TextureSlot,
-    metadata::ShaderModuleMetadataExt, syntax::ShaderModule,
+    syntax::ShaderModule,
 };
 
 fn parse_metadata(source: &str, textures: &[ShaderTextureInfo]) -> ShaderMetadata {
@@ -29,15 +29,13 @@ fn texture_with_components(slot: u8, is_enabled: bool, components: [bool; 3]) ->
 }
 
 #[test]
-fn shader_module_metadata_extension_extracts_metadata() {
+fn shader_module_extracts_metadata() {
     let source = r#"
 // [COMBO] {"combo":"QUALITY","default":3}
 void main(){}
 "#;
     let module = ShaderModule::parse(ShaderStageKind::Fragment, source).expect("module parses");
-    let metadata = module
-        .extract_metadata(&[])
-        .expect("metadata extracts through extension trait");
+    let metadata = module.extract_metadata(&[]).expect("metadata extracts");
 
     assert_eq!(
         metadata.combos(),
@@ -110,6 +108,55 @@ void main(){}
 }
 
 #[test]
+fn records_vec2_metadata_defaults_as_typed_vectors() {
+    let metadata = parse_metadata(
+        r#"
+uniform vec2 g_Scale; // {"default":"1 1","material":"scale"}
+void main(){}
+"#,
+        &[],
+    );
+
+    assert_eq!(metadata.default_uniforms().len(), 1);
+    assert_eq!(metadata.default_uniforms()[0].uniform(), "g_Scale");
+    assert_eq!(
+        metadata.default_uniforms()[0].value(),
+        &PropertyValue::Vec2([1.0, 1.0])
+    );
+}
+
+#[test]
+fn parses_numeric_metadata_default_shapes_as_typed_values() {
+    assert_eq!(
+        PropertyValue::parse_metadata_default("2").expect("scalar parses"),
+        PropertyValue::Number(2.0)
+    );
+    assert_eq!(
+        PropertyValue::parse_metadata_default("1 2").expect("vec2 parses"),
+        PropertyValue::Vec2([1.0, 2.0])
+    );
+    assert_eq!(
+        PropertyValue::parse_metadata_default("1, 2, 3").expect("vec3 parses"),
+        PropertyValue::Vec3([1.0, 2.0, 3.0])
+    );
+    assert_eq!(
+        PropertyValue::parse_metadata_default("1 2 3 4").expect("vec4 parses"),
+        PropertyValue::Vec4([1.0, 2.0, 3.0, 4.0])
+    );
+    assert_eq!(
+        PropertyValue::parse_metadata_default("1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16")
+            .expect("matrix4 parses"),
+        PropertyValue::Matrix4([
+            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0,
+        ])
+    );
+    assert_eq!(
+        PropertyValue::parse_metadata_default("1 2 3 4 5").expect("fallback parses"),
+        PropertyValue::String("1 2 3 4 5".to_owned())
+    );
+}
+
+#[test]
 fn annotation_defaults_parse_into_typed_payloads_before_builder_use() {
     let metadata = parse_metadata(
         r#"
@@ -167,6 +214,26 @@ void main(){}
             ShaderComboValue::new(ComboName::new("HAS_B").expect("valid combo"), "1"),
         ]
     );
+}
+
+#[test]
+fn repeated_metadata_combos_replace_value_without_reordering() {
+    let metadata = parse_metadata(
+        r#"
+// [COMBO] {"combo":"FIRST","default":0}
+// [COMBO] {"combo":"SECOND","default":1}
+// [COMBO] {"combo":"first","default":2}
+void main(){}
+"#,
+        &[],
+    );
+
+    let combos = metadata.combos();
+
+    assert_eq!(combos[0].name().as_str(), "first");
+    assert_eq!(combos[0].value(), "2");
+    assert_eq!(combos[1].name().as_str(), "SECOND");
+    assert_eq!(combos[1].value(), "1");
 }
 
 #[test]

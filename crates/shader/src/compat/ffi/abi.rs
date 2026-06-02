@@ -88,7 +88,7 @@ pub unsafe extern "C" fn rs_shader_compile_program(
             user_data: include_user_data,
         };
         let program = DefaultShaderPipeline::new(provider, NagaCompiler).compile(&request)?;
-        let handle = Box::new(super::RsShaderProgram::try_from(program)?);
+        let handle = Box::new(super::RsShaderProgram::from_compiled_program(program)?);
 
         // SAFETY: Caller guarantees `out_program` is valid for writes.
         unsafe {
@@ -249,6 +249,23 @@ pub unsafe extern "C" fn rs_shader_program_diagnostics_json(
     program_ref(program).map_or(c"[]".as_ptr(), |program| program.diagnostics_json.as_ptr())
 }
 
+/// Returns borrowed cache key tied to `program`.
+///
+/// Null program handles return an empty string.
+///
+/// # Safety
+///
+/// `program` must be null or a valid pointer returned by
+/// `rs_shader_compile_program` that remains live for the duration of the call.
+/// The returned pointer is borrowed from `program` and must not be used after
+/// `rs_shader_program_free`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rs_shader_program_cache_key(
+    program: *const super::RsShaderProgram,
+) -> *const c_char {
+    program_ref(program).map_or(c"".as_ptr(), |program| program.cache_key.as_ptr())
+}
+
 /// Frees a program handle returned by [`rs_shader_compile_program`].
 ///
 /// # Safety
@@ -283,6 +300,7 @@ pub fn ensure_linked() {
     let _ = std::hint::black_box(rs_shader_program_metadata_json as *const ());
     let _ = std::hint::black_box(rs_shader_program_reflection_json as *const ());
     let _ = std::hint::black_box(rs_shader_program_diagnostics_json as *const ());
+    let _ = std::hint::black_box(rs_shader_program_cache_key as *const ());
     let _ = std::hint::black_box(rs_shader_program_free as *const ());
     let _ = std::hint::black_box(rs_shader_last_error as *const ());
 }

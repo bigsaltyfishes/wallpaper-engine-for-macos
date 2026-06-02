@@ -39,6 +39,24 @@ impl SourceSpan {
     pub const fn end(&self) -> usize {
         self.end
     }
+
+    /// Returns a zero-width span at the start of this span.
+    #[must_use]
+    pub const fn start_point(self) -> Self {
+        Self {
+            start: self.start,
+            end: self.start,
+        }
+    }
+
+    /// Returns a zero-width span at the end of this span.
+    #[must_use]
+    pub const fn end_point(self) -> Self {
+        Self {
+            start: self.end,
+            end: self.end,
+        }
+    }
 }
 
 #[cfg(feature = "serde")]

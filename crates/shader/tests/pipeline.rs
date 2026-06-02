@@ -1,16 +1,18 @@
 use shader::{
     BindingIndex, BindingSet, ComboName, CompiledShaderStage, CompiledStageArtifact,
-    InMemoryShaderSourceProvider, IncludePath, PropertyName, PropertyValue, ShaderCachePolicy,
+    InMemoryShaderSourceProvider, IncludePath, PropertyName, PropertyValue, ShaderCacheStrategy,
     ShaderComboValue, ShaderCompiler, ShaderDescriptorKind, ShaderError, ShaderName,
     ShaderProgramRequest, ShaderReflection, ShaderReflector, ShaderResult, ShaderStageKind,
     ShaderStageSource, ShaderTextureInfo, ShaderUniformBlock, ShaderUniformMember,
     TextureFormatHint, TextureSlot,
     compile::NagaCompiler,
-    legalize::LegalizedStageSource,
+    legalize::CodegenStageSource,
     pipeline::{DefaultShaderPipeline, ShaderPipeline, ShaderPipelineRevision},
 };
 
 const SPIRV_MAGIC: u32 = 0x0723_0203;
+const ASSET_SHADER_ROOT: &str = "/Users/molyuu/Library/Application \
+                                 Support/Steam/steamapps/common/wallpaper_engine/assets/shaders";
 
 #[test]
 fn compiles_program_and_merges_metadata_reflection_and_diagnostics() {
@@ -76,7 +78,7 @@ fn compiles_program_and_merges_metadata_reflection_and_diagnostics() {
         program
             .diagnostics()
             .iter()
-            .any(|diagnostic| diagnostic.pass() == Some("Legalizer"))
+            .any(|diagnostic| diagnostic.pass() == Some("Codegen"))
     );
 }
 
@@ -119,6 +121,41 @@ fn cache_key_tracks_sources_combos_revision_and_legalized_output() {
     assert_ne!(base, combo_change);
     assert_ne!(base, revision_change);
     assert_ne!(base, legalized_change);
+}
+
+#[test]
+fn cache_key_tracks_typed_vector_and_matrix_property_values() {
+    let pipeline = source_capture_pipeline();
+    let vec2 = pipeline
+        .compile(&request_with_property(
+            "scale",
+            PropertyValue::Vec2([1.0, 1.0]),
+        ))
+        .expect("vec2 property request should compile")
+        .cache_key()
+        .clone();
+    let vec4 = pipeline
+        .compile(&request_with_property(
+            "scale",
+            PropertyValue::Vec4([1.0, 1.0, 1.0, 1.0]),
+        ))
+        .expect("vec4 property request should compile")
+        .cache_key()
+        .clone();
+    let matrix4 = pipeline
+        .compile(&request_with_property(
+            "scale",
+            PropertyValue::Matrix4([
+                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+            ]),
+        ))
+        .expect("matrix4 property request should compile")
+        .cache_key()
+        .clone();
+
+    assert_ne!(vec2, vec4);
+    assert_ne!(vec2, matrix4);
+    assert_ne!(vec4, matrix4);
 }
 
 #[test]
@@ -1335,13 +1372,13 @@ fn pipeline_rejects_leading_zero_encoded_source_texture_binding() {
         .compile(&request)
         .expect_err("leading-zero encoded texture slot should be rejected");
 
-    let ShaderError::Legalize { diagnostics } = error else {
-        panic!("expected structured legalization error");
+    let ShaderError::Codegen { diagnostics } = error else {
+        panic!("expected structured codegen error");
     };
     let diagnostic = diagnostics
         .first()
         .expect("leading-zero rejection should include diagnostic");
-    assert_eq!(diagnostic.pass(), Some("Legalizer"));
+    assert_eq!(diagnostic.pass(), Some("Codegen"));
     assert!(diagnostic.message().contains("g_Texture01"));
     assert!(diagnostic.message().contains("canonical"));
 }
@@ -1448,6 +1485,65 @@ fn pipeline_extracts_metadata_from_expanded_includes_before_main() {
     assert_eq!(program.metadata().default_textures().len(), 1);
     assert_eq!(program.metadata().default_textures()[0].slot().index(), 0);
     assert_eq!(program.metadata().default_textures()[0].path(), "white");
+}
+
+#[test]
+fn pipeline_extracts_blur_style_vec2_metadata_default_from_vertex_stage() {
+    let pipeline = source_capture_pipeline();
+    let request = interface_request(
+        concat!(
+            "// [COMBO] {\"material\":\"ui_editor_properties_kernel_size\",\"combo\":\"KERNEL\",",
+            "\"type\":\"options\",\"default\":0,\"options\":{\"13x13\":0,\"7x7\":1,\"3x3\":2}}\n",
+            "// [COMBO] {\"combo\":\"VERTICAL\",\"default\":1}\n",
+            "attribute vec3 a_Position;\n",
+            "attribute vec2 a_TexCoord;\n",
+            "uniform mat4 g_ModelViewProjectionMatrix;\n",
+            "uniform vec2 g_Scale; // {\"default\":\"1 1\",",
+            "\"label\":\"ui_editor_properties_scale\",\"linked\":true,\"material\":\"scale\",",
+            "\"range\":[0.01,2.0]}\n",
+            "uniform vec4 g_Texture0Resolution;\n",
+            "varying vec4 v_TexCoord;\n",
+            "void main() {\n",
+            "#if VERTICAL\n",
+            "  gl_Position = mul(vec4(a_Position, 1.0), g_ModelViewProjectionMatrix);\n",
+            "#else\n",
+            "  gl_Position = vec4(a_Position, 1.0);\n",
+            "#endif\n",
+            "  v_TexCoord.xy = a_TexCoord;\n",
+            "#if VERTICAL\n",
+            "  v_TexCoord.z = 0;\n",
+            "  v_TexCoord.w = g_Scale.y / g_Texture0Resolution.w;\n",
+            "#else\n",
+            "  v_TexCoord.z = g_Scale.x / g_Texture0Resolution.z;\n",
+            "  v_TexCoord.w = 0;\n",
+            "#endif\n",
+            "}\n",
+        ),
+        "void main() { gl_FragColor = vec4(1.0); }\n",
+    );
+
+    let program = pipeline
+        .compile(&request)
+        .expect("blur-style shader should compile through metadata pipeline");
+
+    assert_eq!(
+        program.metadata().default_uniforms(),
+        &[
+            shader::DefaultUniformValue::new("g_Scale", PropertyValue::Vec2([1.0, 1.0]))
+                .expect("valid default uniform")
+        ]
+    );
+
+    let vertex_source = legalized_stage_source(&program, ShaderStageKind::Vertex);
+    assert!(
+        vertex_source
+            .contains("gl_Position = ((g_ModelViewProjectionMatrix) * (vec4(a_Position, 1.0)));"),
+        "{vertex_source}"
+    );
+    assert!(
+        vertex_source.contains("v_TexCoord.w = g_Scale.y / g_Texture0Resolution.w;"),
+        "{vertex_source}"
+    );
 }
 
 #[test]
@@ -2206,6 +2302,152 @@ fn pipeline_compiles_vec4_varying_assigned_from_repeated_vec2_swizzle() {
 }
 
 #[test]
+fn pipeline_narrows_generated_vec4_fragment_coordinate_for_sampler2d() {
+    let request = interface_request(
+        concat!(
+            "attribute vec3 a_Position;\n",
+            "attribute vec2 a_TexCoord;\n",
+            "varying vec4 v_TexCoord;\n",
+            "void main() {\n",
+            "  gl_Position = vec4(a_Position, 1.0);\n",
+            "  v_TexCoord = a_TexCoord.xyxy;\n",
+            "}\n",
+        ),
+        concat!(
+            "varying vec4 v_TexCoord;\n",
+            "uniform sampler2D g_Texture0;\n",
+            "void main() {\n",
+            "  vec4 scene = texSample2D(g_Texture0, v_TexCoord);\n",
+            "  gl_FragColor = scene;\n",
+            "}\n",
+        ),
+    );
+
+    let program = pipeline()
+        .compile(&request)
+        .expect("generated vec4 fragment coordinate should compile through Naga");
+    let fragment_source = legalized_stage_source(&program, ShaderStageKind::Fragment);
+
+    assert!(fragment_source.contains(
+        "vec4 scene = texture(sampler2D(g_Texture0, _we_Sampler_g_Texture0), v_TexCoord.xy);"
+    ));
+    assert!(
+        !fragment_source.contains("sampler2D(g_Texture0, _we_Sampler_g_Texture0), v_TexCoord);")
+    );
+}
+
+#[test]
+fn pipeline_compiles_asset_genericimage4_without_widening_rotate_vec2_helper() {
+    let pipeline =
+        ShaderPipeline::with_reflector(AssetShaderProvider, SourceCaptureCompiler, EmptyReflector);
+    let vertex = std::fs::read_to_string(format!("{ASSET_SHADER_ROOT}/genericimage4.vert"))
+        .expect("genericimage4 vertex asset should be readable");
+    let fragment = std::fs::read_to_string(format!("{ASSET_SHADER_ROOT}/genericimage4.frag"))
+        .expect("genericimage4 fragment asset should be readable");
+    let request =
+        ShaderProgramRequest::builder(ShaderName::new("genericimage4").expect("valid name"))
+            .stage(ShaderStageSource::new(ShaderStageKind::Vertex, vertex))
+            .stage(ShaderStageSource::new(ShaderStageKind::Fragment, fragment))
+            .texture(ShaderTextureInfo::new(
+                TextureSlot::new(0).expect("valid texture slot"),
+                true,
+                TextureFormatHint::Rgba8,
+            ))
+            .build()
+            .expect("genericimage4 request should be valid");
+
+    let program = pipeline
+        .compile(&request)
+        .expect("asset genericimage4 should compile through shader pipeline");
+    let fragment = legalized_stage_source(&program, ShaderStageKind::Fragment);
+
+    assert!(
+        fragment.contains("vec2 cs = vec2(cos(r), sin(r));"),
+        "{fragment}"
+    );
+    assert!(!fragment.contains("vec2 cs = vec3(vec2(cos(r), sin(r)), 0.0);"));
+}
+
+#[test]
+fn pipeline_compiles_3414858021_depthparallax_with_line_continuations() {
+    let request = unpacked_shader_pair_request(
+        "workshop/3370055069/effects/depthparallax",
+        "unpack/3414858021/shaders/workshop/3370055069/effects/depthparallax.vert",
+        "unpack/3414858021/shaders/workshop/3370055069/effects/depthparallax.frag",
+    );
+
+    let program = ShaderPipeline::new(AssetShaderProvider, NagaCompiler)
+        .compile(&request)
+        .expect("depthparallax line continuations should compile through shader pipeline");
+    assert!(!program.stages().is_empty());
+}
+
+#[test]
+fn pipeline_compiles_3414858021_auto_sway_with_unknown_punctuation_tokens() {
+    let request = unpacked_shader_pair_request(
+        "workshop/3235948233/effects/auto_sway",
+        "unpack/3414858021/shaders/workshop/3235948233/effects/auto_sway.vert",
+        "unpack/3414858021/shaders/workshop/3235948233/effects/auto_sway.frag",
+    );
+
+    let program = ShaderPipeline::new(AssetShaderProvider, NagaCompiler)
+        .compile(&request)
+        .expect("auto_sway unknown punctuation should compile through shader pipeline");
+    assert!(!program.stages().is_empty());
+}
+
+#[test]
+fn pipeline_compiles_semicolon_terminated_audio_sample_conditionals() {
+    let request = ShaderProgramRequest::builder(
+        ShaderName::new("effects/simple_gradient_audio_bar").expect("valid name"),
+    )
+    .stage(ShaderStageSource::new(
+        ShaderStageKind::Vertex,
+        concat!(
+            "attribute vec3 a_Position;\n",
+            "void main() {\n",
+            "  gl_Position = vec4(a_Position, 1.0);\n",
+            "}\n",
+        ),
+    ))
+    .stage(ShaderStageSource::new(
+        ShaderStageKind::Fragment,
+        concat!(
+            "#if AUDIOSAMPLES == 16\n",
+            "uniform float g_AudioSpectrum16Left[16];\n",
+            "#elif AUDIOSAMPLES == 32;\n",
+            "uniform float g_AudioSpectrum32Left[32];\n",
+            "#elif AUDIOSAMPLES == 64;\n",
+            "uniform float g_AudioSpectrum64Left[64];\n",
+            "#endif\n",
+            "varying vec2 v_TexCoord;\n",
+            "void main() {\n",
+            "#if AUDIOSAMPLES == 16\n",
+            "  float left[AUDIOSAMPLES] = g_AudioSpectrum16Left;\n",
+            "#elif AUDIOSAMPLES == 32;\n",
+            "  float left[AUDIOSAMPLES] = g_AudioSpectrum32Left;\n",
+            "#elif AUDIOSAMPLES == 64;\n",
+            "  float left[AUDIOSAMPLES] = g_AudioSpectrum64Left;\n",
+            "#endif\n",
+            "  float i = floor(v_TexCoord.x * AUDIOSAMPLES);\n",
+            "  gl_FragColor = vec4(left[i]);\n",
+            "}\n",
+        ),
+    ))
+    .replace_combo(ShaderComboValue::new(
+        ComboName::new("AUDIOSAMPLES").expect("valid combo"),
+        "32",
+    ))
+    .build()
+    .expect("simple gradient audio bar request should be valid");
+
+    let program = ShaderPipeline::new(AssetShaderProvider, NagaCompiler)
+        .compile(&request)
+        .expect("semicolon-terminated audio sample conditionals should compile");
+    assert!(!program.stages().is_empty());
+}
+
+#[test]
 fn pipeline_compiles_iris_movement_follow_cursor_vertex_path() {
     let request = interface_request(
         concat!(
@@ -2532,7 +2774,7 @@ impl ShaderCompiler for SourceCaptureCompiler {
     fn compile_stage(
         &self,
         stage: ShaderStageKind,
-        source: &LegalizedStageSource,
+        source: &CodegenStageSource,
     ) -> ShaderResult<CompiledStageArtifact<Self::Module>> {
         let compiled_stage = CompiledShaderStage::new(
             stage,
@@ -2558,6 +2800,20 @@ impl ShaderReflector<()> for EmptyReflector {
         _module: &(),
     ) -> ShaderResult<ShaderReflection> {
         Ok(ShaderReflection::empty())
+    }
+}
+
+#[derive(Clone, Debug)]
+struct AssetShaderProvider;
+
+impl shader::ShaderSourceProvider for AssetShaderProvider {
+    fn read_to_string(&self, path: &IncludePath) -> ShaderResult<String> {
+        std::fs::read_to_string(format!("{ASSET_SHADER_ROOT}/{}", path.as_str())).map_err(|error| {
+            ShaderError::SourceRead {
+                path: path.clone(),
+                message: error.to_string(),
+            }
+        })
     }
 }
 
@@ -2671,12 +2927,30 @@ fn request_with_fragment_call(
             PropertyName::new("brightness").expect("valid property"),
             PropertyValue::Number(1.0),
         ))
-        .cache_policy(ShaderCachePolicy::Enabled {
+        .cache_strategy(ShaderCacheStrategy::Enabled {
             scene_id: "pipeline-test".to_owned(),
         })
         .replace_combo(ShaderComboValue::new(
             ComboName::new("HAS_TEXTURE").expect("valid combo"),
             combo_value,
+        ))
+        .build()
+        .expect("request should be valid")
+}
+
+fn request_with_property(name: &str, value: PropertyValue) -> ShaderProgramRequest {
+    ShaderProgramRequest::builder(ShaderName::new("effects/property-cache").expect("valid name"))
+        .stage(ShaderStageSource::new(
+            ShaderStageKind::Vertex,
+            "void main() { gl_Position = vec4(0.0); }\n",
+        ))
+        .stage(ShaderStageSource::new(
+            ShaderStageKind::Fragment,
+            "void main() { gl_FragColor = vec4(1.0); }\n",
+        ))
+        .property(shader::ProjectPropertyBinding::new(
+            PropertyName::new(name).expect("valid property"),
+            value,
         ))
         .build()
         .expect("request should be valid")
@@ -2724,9 +2998,38 @@ fn interface_request(
         .expect("request should be valid")
 }
 
+fn unpacked_shader_pair_request(
+    name: &str,
+    vertex_path: &str,
+    fragment_path: &str,
+) -> ShaderProgramRequest {
+    let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("workspace root should be two levels above shader crate");
+    ShaderProgramRequest::builder(ShaderName::new(name).expect("valid shader name"))
+        .stage(ShaderStageSource::new(
+            ShaderStageKind::Vertex,
+            std::fs::read_to_string(workspace_root.join(vertex_path))
+                .expect("vertex shader should be readable"),
+        ))
+        .stage(ShaderStageSource::new(
+            ShaderStageKind::Fragment,
+            std::fs::read_to_string(workspace_root.join(fragment_path))
+                .expect("fragment shader should be readable"),
+        ))
+        .texture(ShaderTextureInfo::new(
+            TextureSlot::new(0).expect("valid texture slot"),
+            true,
+            TextureFormatHint::Rgba8,
+        ))
+        .build()
+        .expect("unpacked shader pair request should be valid")
+}
+
 fn assert_cross_stage_error(err: ShaderError, expected: &str) {
-    let ShaderError::Legalize { diagnostics } = err else {
-        panic!("expected cross-stage legalization diagnostic");
+    let ShaderError::Codegen { diagnostics } = err else {
+        panic!("expected cross-stage codegen diagnostic");
     };
     let diagnostic = diagnostics
         .first()

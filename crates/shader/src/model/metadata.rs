@@ -1,5 +1,7 @@
+use smol_str::SmolStr;
+
 use super::{ComboName, TextureSlot};
-use crate::{PropertyValue, ShaderError, ShaderResult, property::NonEmptyNoNulStrExt};
+use crate::{PropertyValue, ShaderError, ShaderResult};
 
 /// Shader combo value.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -8,7 +10,7 @@ pub struct ShaderComboValue {
     /// Validated combo key.
     name: ComboName,
     /// Combo value as serialized by Wallpaper Engine material metadata.
-    value: String,
+    value: SmolStr,
 }
 
 impl ShaderComboValue {
@@ -17,7 +19,7 @@ impl ShaderComboValue {
     pub fn new(name: ComboName, value: impl Into<String>) -> Self {
         Self {
             name,
-            value: value.into(),
+            value: SmolStr::new(value.into()),
         }
     }
 
@@ -30,7 +32,7 @@ impl ShaderComboValue {
     /// Returns the combo value.
     #[must_use]
     pub fn value(&self) -> &str {
-        &self.value
+        self.value.as_str()
     }
 }
 
@@ -111,9 +113,9 @@ impl ShaderMetadata {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MaterialAlias {
     /// Material property name as written in metadata.
-    material: String,
+    material: SmolStr,
     /// Shader uniform name the material property maps to.
-    uniform: String,
+    uniform: SmolStr,
 }
 
 impl MaterialAlias {
@@ -125,23 +127,38 @@ impl MaterialAlias {
     pub fn new(material: impl Into<String>, uniform: impl Into<String>) -> ShaderResult<Self> {
         let material = material.into();
         let uniform = uniform.into();
-        material
-            .as_str()
-            .validate_non_empty_no_nul("material alias")?;
-        uniform.as_str().validate_non_empty_no_nul("uniform name")?;
-        Ok(Self { material, uniform })
+        if material.is_empty() {
+            return Err(ShaderError::invalid_request("material alias is empty"));
+        }
+        if material.contains('\0') {
+            return Err(ShaderError::invalid_request(
+                "material alias contains nul byte",
+            ));
+        }
+        if uniform.is_empty() {
+            return Err(ShaderError::invalid_request("uniform name is empty"));
+        }
+        if uniform.contains('\0') {
+            return Err(ShaderError::invalid_request(
+                "uniform name contains nul byte",
+            ));
+        }
+        Ok(Self {
+            material: SmolStr::new(material),
+            uniform: SmolStr::new(uniform),
+        })
     }
 
     /// Returns the material property name.
     #[must_use]
     pub fn material(&self) -> &str {
-        &self.material
+        self.material.as_str()
     }
 
     /// Returns the shader uniform name.
     #[must_use]
     pub fn uniform(&self) -> &str {
-        &self.uniform
+        self.uniform.as_str()
     }
 }
 
@@ -150,7 +167,7 @@ impl MaterialAlias {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct DefaultUniformValue {
     /// Uniform that receives this default value.
-    uniform: String,
+    uniform: SmolStr,
     /// Non-null default value for the uniform.
     value: PropertyValue,
 }
@@ -164,19 +181,29 @@ impl DefaultUniformValue {
     /// the value is [`PropertyValue::None`].
     pub fn new(uniform: impl Into<String>, value: PropertyValue) -> ShaderResult<Self> {
         let uniform = uniform.into();
-        uniform.as_str().validate_non_empty_no_nul("uniform name")?;
+        if uniform.is_empty() {
+            return Err(ShaderError::invalid_request("uniform name is empty"));
+        }
+        if uniform.contains('\0') {
+            return Err(ShaderError::invalid_request(
+                "uniform name contains nul byte",
+            ));
+        }
         if matches!(value, PropertyValue::None) {
             return Err(ShaderError::invalid_request(
                 "default uniform value cannot be none",
             ));
         }
-        Ok(Self { uniform, value })
+        Ok(Self {
+            uniform: SmolStr::new(uniform),
+            value,
+        })
     }
 
     /// Returns the shader uniform name.
     #[must_use]
     pub fn uniform(&self) -> &str {
-        &self.uniform
+        self.uniform.as_str()
     }
 
     /// Returns the default value.
@@ -204,8 +231,16 @@ impl DefaultTextureValue {
     /// Returns an error when the path is empty or contains a NUL byte.
     pub fn new(slot: TextureSlot, path: impl Into<String>) -> ShaderResult<Self> {
         let path = path.into();
-        path.as_str()
-            .validate_non_empty_no_nul("default texture path")?;
+        if path.is_empty() {
+            return Err(ShaderError::invalid_request(
+                "default texture path is empty",
+            ));
+        }
+        if path.contains('\0') {
+            return Err(ShaderError::invalid_request(
+                "default texture path contains nul byte",
+            ));
+        }
         Ok(Self { slot, path })
     }
 
@@ -219,5 +254,31 @@ impl DefaultTextureValue {
     #[must_use]
     pub fn path(&self) -> &str {
         &self.path
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use smol_str::SmolStr;
+
+    use super::*;
+
+    fn accepts_smol_str(_value: &SmolStr) {}
+
+    #[test]
+    fn metadata_identifier_values_use_compact_storage() {
+        let ShaderComboValue { value, .. } =
+            ShaderComboValue::new(ComboName::new("QUALITY").expect("valid combo"), "2");
+        accepts_smol_str(&value);
+
+        let MaterialAlias { material, uniform } =
+            MaterialAlias::new("brightness", "g_Brightness").expect("valid alias");
+        accepts_smol_str(&material);
+        accepts_smol_str(&uniform);
+
+        let DefaultUniformValue { uniform, .. } =
+            DefaultUniformValue::new("g_Exposure", PropertyValue::Number(1.0))
+                .expect("valid default");
+        accepts_smol_str(&uniform);
     }
 }

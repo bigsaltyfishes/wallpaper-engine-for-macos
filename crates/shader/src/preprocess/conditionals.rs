@@ -25,7 +25,7 @@ impl<'a> ConditionalStack<'a> {
     }
 
     /// Pushes a new conditional frame.
-    pub(super) fn push(&mut self, condition_active: bool, opening: DirectiveLocation<'a>) {
+    pub fn push(&mut self, condition_active: bool, opening: DirectiveLocation<'a>) {
         let parent_active = self.is_active();
         self.frames.push(ConditionalFrame {
             parent_active,
@@ -40,7 +40,12 @@ impl<'a> ConditionalStack<'a> {
     }
 
     /// Enters an `#elif` arm for the current frame.
-    pub(super) fn enter_elif(&mut self, condition_active: bool) -> Result<(), ConditionalError> {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when there is no open conditional frame or when an
+    /// `#elif` follows an `#else` arm.
+    pub fn enter_elif(&mut self, condition_active: bool) -> Result<(), ConditionalError> {
         let Some(frame) = self.frames.last_mut() else {
             return Err(ConditionalError::UnmatchedElif);
         };
@@ -58,7 +63,12 @@ impl<'a> ConditionalStack<'a> {
     }
 
     /// Returns whether the next `#elif` expression can affect output.
-    pub(super) fn should_evaluate_elif(&self) -> Result<bool, ConditionalError> {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when there is no open conditional frame or when an
+    /// `#elif` follows an `#else` arm.
+    pub fn should_evaluate_elif(&self) -> Result<bool, ConditionalError> {
         let Some(frame) = self.frames.last() else {
             return Err(ConditionalError::UnmatchedElif);
         };
@@ -71,7 +81,12 @@ impl<'a> ConditionalStack<'a> {
     }
 
     /// Enters the `#else` arm for the current frame.
-    pub(super) fn enter_else(&mut self) -> Result<(), ConditionalError> {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when there is no open conditional frame or when the
+    /// frame already consumed an `#else` arm.
+    pub fn enter_else(&mut self) -> Result<(), ConditionalError> {
         let Some(frame) = self.frames.last_mut() else {
             return Err(ConditionalError::UnmatchedElse);
         };
@@ -86,7 +101,11 @@ impl<'a> ConditionalStack<'a> {
     }
 
     /// Pops the current conditional frame.
-    pub(super) fn pop(&mut self) -> Result<(), ConditionalError> {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when there is no open conditional frame to close.
+    pub fn pop(&mut self) -> Result<(), ConditionalError> {
         if self.frames.pop().is_none() {
             return Err(ConditionalError::UnmatchedEndif);
         }
@@ -94,12 +113,14 @@ impl<'a> ConditionalStack<'a> {
     }
 
     /// Returns whether no conditional frames are active.
-    pub(super) fn is_empty(&self) -> bool {
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
         self.frames.is_empty()
     }
 
     /// Returns the innermost unclosed directive location.
-    pub(super) fn innermost_opening(&self) -> Option<DirectiveLocation<'a>> {
+    #[must_use]
+    pub fn innermost_opening(&self) -> Option<DirectiveLocation<'a>> {
         self.frames.last().map(|frame| frame.opening)
     }
 }
@@ -137,7 +158,7 @@ impl ConditionalBranchState {
 
 /// Errors produced while balancing conditional directives.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum ConditionalError {
+pub enum ConditionalError {
     /// `#elif` appeared without a matching opening directive.
     UnmatchedElif,
     /// `#elif` appeared after an `#else` arm.
@@ -169,71 +190,8 @@ pub(super) struct ConditionalExpression<'src> {
 impl ConditionalExpression<'_> {
     /// Evaluates the expression against visible macros.
     pub(super) fn evaluate(self, macros: &MacroTable) -> Result<bool, &'static str> {
-        ConditionalExpressionParser::try_from(ConditionalExpressionContext {
-            source: self.source,
-            macros,
-        })?
-        .parse()
-    }
-}
-
-impl<'src> TryFrom<&'src str> for ConditionalExpression<'src> {
-    type Error = &'static str;
-
-    fn try_from(source: &'src str) -> Result<Self, Self::Error> {
-        let trimmed = source.trim();
-        if trimmed.is_empty() {
-            return Err("#if expects an expression");
-        }
-
-        Ok(Self { source: trimmed })
-    }
-}
-
-/// Token in a supported `#if` expression.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum ConditionalToken<'src> {
-    /// Macro identifier.
-    Identifier(&'src str),
-    /// Signed integer value parsed from a decimal literal.
-    Integer(i64),
-    /// `||`.
-    Or,
-    /// `&&`.
-    And,
-    /// `!`.
-    Not,
-    /// `==`.
-    Equal,
-    /// `!=`.
-    NotEqual,
-    /// `<`.
-    Less,
-    /// `<=`.
-    LessEqual,
-    /// `>`.
-    Greater,
-    /// `>=`.
-    GreaterEqual,
-    /// `(`.
-    OpenParen,
-    /// `)`.
-    CloseParen,
-}
-
-/// Token stream for a supported `#if` expression.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct ConditionalTokens<'src> {
-    /// Parsed tokens.
-    items: Vec<ConditionalToken<'src>>,
-}
-
-impl<'src> TryFrom<&'src str> for ConditionalTokens<'src> {
-    type Error = &'static str;
-
-    fn try_from(source: &'src str) -> Result<Self, Self::Error> {
         let mut tokens = Vec::new();
-        let bytes = source.as_bytes();
+        let bytes = self.source.as_bytes();
         let mut position = 0;
 
         while position < bytes.len() {
@@ -247,7 +205,7 @@ impl<'src> TryFrom<&'src str> for ConditionalTokens<'src> {
                     while bytes.get(position).is_some_and(u8::is_ascii_digit) {
                         position += 1;
                     }
-                    let value = source[start..position]
+                    let value = self.source[start..position]
                         .parse::<i64>()
                         .map_err(|_error| "#if expression is unsupported")?;
                     tokens.push(ConditionalToken::Integer(value));
@@ -261,7 +219,7 @@ impl<'src> TryFrom<&'src str> for ConditionalTokens<'src> {
                     {
                         position += 1;
                     }
-                    tokens.push(ConditionalToken::Identifier(&source[start..position]));
+                    tokens.push(ConditionalToken::Identifier(&self.source[start..position]));
                 }
                 b'|' if bytes.get(position + 1).is_some_and(|byte| *byte == b'|') => {
                     tokens.push(ConditionalToken::Or);
@@ -307,18 +265,66 @@ impl<'src> TryFrom<&'src str> for ConditionalTokens<'src> {
                     tokens.push(ConditionalToken::CloseParen);
                     position += 1;
                 }
+                b';' => {
+                    tokens.push(ConditionalToken::Terminator);
+                    position += 1;
+                }
                 _ => return Err("#if expression is unsupported"),
             }
         }
-        Ok(Self { items: tokens })
+
+        ConditionalExpressionParser {
+            tokens,
+            position: 0,
+            macros,
+        }
+        .parse()
     }
 }
 
-impl<'src> ConditionalTokens<'src> {
-    /// Moves the token stream into the parser-owned vector.
-    fn into_vec(self) -> Vec<ConditionalToken<'src>> {
-        self.items
+impl<'src> ConditionalExpression<'src> {
+    /// Parses raw text into a supported conditional expression.
+    pub(super) fn parse(source: &'src str) -> Result<Self, &'static str> {
+        let trimmed = source.trim();
+        if trimmed.is_empty() {
+            return Err("#if expects an expression");
+        }
+
+        Ok(Self { source: trimmed })
     }
+}
+
+/// Token in a supported `#if` expression.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum ConditionalToken<'src> {
+    /// Macro identifier.
+    Identifier(&'src str),
+    /// Signed integer value parsed from a decimal literal.
+    Integer(i64),
+    /// `||`.
+    Or,
+    /// `&&`.
+    And,
+    /// `!`.
+    Not,
+    /// `==`.
+    Equal,
+    /// `!=`.
+    NotEqual,
+    /// `<`.
+    Less,
+    /// `<=`.
+    LessEqual,
+    /// `>`.
+    Greater,
+    /// `>=`.
+    GreaterEqual,
+    /// `(`.
+    OpenParen,
+    /// `)`.
+    CloseParen,
+    /// Optional legacy directive expression terminator.
+    Terminator,
 }
 
 /// Numeric or boolean value produced while evaluating a `#if` expression.
@@ -389,15 +395,6 @@ impl ConditionalComparison {
     }
 }
 
-/// Borrowed context needed to create a conditional expression parser.
-#[derive(Clone, Copy, Debug)]
-pub(super) struct ConditionalExpressionContext<'src, 'macros> {
-    /// Raw expression text.
-    source: &'src str,
-    /// Visible macro values.
-    macros: &'macros MacroTable,
-}
-
 /// Recursive-descent parser/evaluator for the Wallpaper Engine `#if` dialect.
 #[derive(Debug)]
 pub(super) struct ConditionalExpressionParser<'src, 'macros> {
@@ -409,25 +406,13 @@ pub(super) struct ConditionalExpressionParser<'src, 'macros> {
     macros: &'macros MacroTable,
 }
 
-impl<'src, 'macros> TryFrom<ConditionalExpressionContext<'src, 'macros>>
-    for ConditionalExpressionParser<'src, 'macros>
-{
-    type Error = &'static str;
-
-    fn try_from(context: ConditionalExpressionContext<'src, 'macros>) -> Result<Self, Self::Error> {
-        let tokens = ConditionalTokens::try_from(context.source)?.into_vec();
-        Ok(Self {
-            tokens,
-            position: 0,
-            macros: context.macros,
-        })
-    }
-}
-
 impl<'src> ConditionalExpressionParser<'src, '_> {
     /// Parses and evaluates one conditional expression.
     fn parse(&mut self) -> Result<bool, &'static str> {
         let value = self.parse_or()?;
+        if matches!(self.peek(), Some(ConditionalToken::Terminator)) {
+            self.position += 1;
+        }
         if self.peek().is_some() {
             return Err("#if expression is unsupported");
         }
