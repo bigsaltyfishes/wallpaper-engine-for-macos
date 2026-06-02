@@ -150,8 +150,13 @@ impl SceneRuntime {
             let mut stored_desc = desc.clone();
             stored_desc.mark_shader_refresh_complete();
             let descriptor_state = SceneRuntimeState::try_from(desc)?;
+            let web_properties = wallpaper_web::Properties::load(
+                std::path::Path::new(&desc.scene_path),
+                descriptor_state.property_override_json.as_deref(),
+            )
+            .map_err(web_error_to_engine)?;
             let mut window = WallpaperWindow::builder(desc.display.clone()).open()?;
-            window.install_web_view(&web_entry)?;
+            window.install_web_view(&web_entry, Some(&web_properties))?;
             let web_runtime = wallpaper_web::Runtime::start(
                 move || {
                     backend
@@ -160,6 +165,7 @@ impl SceneRuntime {
                         .map(|(bins, _)| bins)
                 },
                 window.web_audio_dispatcher()?,
+                window.web_property_dispatcher()?,
             );
             let mut runtime = Self {
                 desc: stored_desc,
@@ -171,7 +177,7 @@ impl SceneRuntime {
                 paused: state.paused,
                 audio_volume: state.audio_volume,
                 audio_muted: state.audio_muted,
-                property_override_json: state.property_override_json,
+                property_override_json: descriptor_state.property_override_json.clone(),
                 window: Some(window),
             };
             runtime.apply_runtime_properties(&descriptor_state)?;
@@ -199,7 +205,7 @@ impl SceneRuntime {
             paused: state.paused,
             audio_volume: state.audio_volume,
             audio_muted: state.audio_muted,
-            property_override_json: state.property_override_json,
+            property_override_json: descriptor_state.property_override_json.clone(),
             window: Some(window),
         };
         runtime.desc = stored_desc;
@@ -491,11 +497,23 @@ impl SceneRuntime {
         &mut self,
         flat_json: Option<String>,
     ) -> Result<(), EngineError> {
-        if let RuntimeContent::Scene(renderer) = &mut self.content {
-            if let Some(json) = flat_json.as_deref() {
-                renderer.set_property_override(json)?;
-            } else {
-                renderer.reset_property_override()?;
+        match &mut self.content {
+            RuntimeContent::Scene(renderer) => {
+                if let Some(json) = flat_json.as_deref() {
+                    renderer.set_property_override(json)?;
+                } else {
+                    renderer.reset_property_override()?;
+                }
+            }
+            RuntimeContent::Web(runtime) => {
+                let properties = wallpaper_web::Properties::load(
+                    std::path::Path::new(&self.desc.scene_path),
+                    flat_json.as_deref(),
+                )
+                .map_err(web_error_to_engine)?;
+                runtime
+                    .dispatch_properties(&properties)
+                    .map_err(web_error_to_engine)?;
             }
         }
         self.property_override_json = flat_json;
@@ -540,10 +558,32 @@ impl SceneRuntime {
         descriptor_state: &SceneRuntimeState,
     ) -> Result<(), EngineError> {
         let state = self.runtime_state();
-        if let RuntimeContent::Scene(renderer) = &mut self.content {
-            state.apply_to(renderer, descriptor_state)?;
+        match &mut self.content {
+            RuntimeContent::Scene(renderer) => state.apply_to(renderer, descriptor_state)?,
+            RuntimeContent::Web(runtime) => {
+                if !matches!(
+                    state.property_override_update(descriptor_state),
+                    PropertyOverrideUpdate::Unchanged
+                ) {
+                    let properties = wallpaper_web::Properties::load(
+                        std::path::Path::new(&self.desc.scene_path),
+                        descriptor_state.property_override_json.as_deref(),
+                    )
+                    .map_err(web_error_to_engine)?;
+                    runtime
+                        .dispatch_properties(&properties)
+                        .map_err(web_error_to_engine)?;
+                }
+            }
         }
         Ok(())
+    }
+}
+
+fn web_error_to_engine(error: wallpaper_web::WebError) -> EngineError {
+    match error {
+        wallpaper_web::WebError::InvalidInput(message) => EngineError::InvalidInput(message),
+        wallpaper_web::WebError::Platform(message) => EngineError::Platform(message),
     }
 }
 
