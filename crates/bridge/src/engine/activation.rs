@@ -11,8 +11,8 @@ use wallpaper_core::{
 
 use crate::{
     api::{BridgeError, BridgeErrorKind},
-    config::{AppConfig, MonitorCfg, MonitorSettingsCfg, WallpaperConfig},
-    display::{DisplayDescExt, DisplayIdentityExt, DisplaySelectorExt},
+    config::{AppConfig, MonitorCfg, MonitorRender, MonitorSettingsCfg, WallpaperConfig},
+    display::{DisplayDescExt, DisplaySelectorExt, DisplaySnapshotExt},
     paths::BridgePaths,
     project::{OverrideMapExt, PropertyValue},
 };
@@ -148,15 +148,16 @@ impl ActivationInputs<'_> {
         wallpaper: &WallpaperConfig,
         monitor: &MonitorCfg,
     ) -> Result<SceneDesc, BridgeError> {
-        SceneDescBuilder::build_from_wallpaper_config(
+        SceneDescBuilder::build_from_wallpaper_config(SceneBuildContext {
             display,
-            wallpaper_id,
+            workshop_id: wallpaper_id,
             wallpaper,
             monitor,
-            self.paused,
-            self.paths,
-            self.force_shader_refresh,
-        )
+            displays: self.displays,
+            paused: self.paused,
+            paths: self.paths,
+            force_shader_refresh: self.force_shader_refresh,
+        })
     }
 }
 
@@ -214,13 +215,7 @@ impl MonitorCfgActivationExt for MonitorCfg {
 
 pub trait SceneDescBuilderExt {
     fn build_from_wallpaper_config(
-        display: DisplayDesc,
-        workshop_id: &str,
-        wallpaper: &WallpaperConfig,
-        monitor: &MonitorCfg,
-        paused: bool,
-        paths: &BridgePaths,
-        force_shader_refresh: bool,
+        context: SceneBuildContext<'_>,
     ) -> Result<SceneDesc, BridgeError>
     where
         Self: Sized;
@@ -228,55 +223,41 @@ pub trait SceneDescBuilderExt {
 
 impl SceneDescBuilderExt for SceneDescBuilder {
     fn build_from_wallpaper_config(
-        display: DisplayDesc,
-        workshop_id: &str,
-        wallpaper: &WallpaperConfig,
-        monitor: &MonitorCfg,
-        paused: bool,
-        paths: &BridgePaths,
-        force_shader_refresh: bool,
+        context: SceneBuildContext<'_>,
     ) -> Result<SceneDesc, BridgeError> {
-        let project_json = paths
+        let project_json = context
+            .paths
             .steam_workshop_root()
-            .join(workshop_id)
+            .join(context.workshop_id)
             .join("project.json");
-        let assets_path = paths.assets_root();
+        let assets_path = context.paths.assets_root();
         let audio_volume =
-            AudioVolume::try_from(wallpaper.audio.volume).map_err(|error| BridgeError::Error {
-                kind: BridgeErrorKind::Engine,
-                message: EngineError::InvalidInput(error.to_string()).to_string(),
-            })?;
-        let render_override = wallpaper
-            .monitors
-            .iter()
-            .find(|render| render.selector == monitor.selector)
-            .or_else(|| {
-                if monitor.selector == crate::config::SerializedSelector::Primary {
-                    let identity_selector = display.identity.has_stable_identity().then(|| {
-                        crate::config::SerializedSelector::from_selector(
-                            &DisplaySelector::Identity(display.identity.clone()),
-                        )
-                    })?;
-                    wallpaper
-                        .monitors
-                        .iter()
-                        .find(|render| render.selector == identity_selector)
-                } else {
-                    None
+            AudioVolume::try_from(context.wallpaper.audio.volume).map_err(|error| {
+                BridgeError::Error {
+                    kind: BridgeErrorKind::Engine,
+                    message: EngineError::InvalidInput(error.to_string()).to_string(),
                 }
-            });
+            })?;
+        let render_override = RenderOverrideResolver {
+            wallpaper: context.wallpaper,
+            monitor: context.monitor,
+            display: &context.display,
+            displays: context.displays,
+        }
+        .resolve();
         let fps = render_override.map_or(60, |render| render.fps);
-        let max_fps = display.refresh_rate_hz.max(1);
+        let max_fps = context.display.refresh_rate_hz.max(1);
         let scaling_mode = render_override
             .map(crate::config::wallpaper::MonitorRender::parse_scaling_mode)
             .unwrap_or_default();
         let scaling_factor = render_override.map_or(1.0, |render| render.scaling_factor);
-        let property_override_json = if !wallpaper.r#type.eq_ignore_ascii_case("scene")
-            || wallpaper.property_overrides.is_empty()
+        let property_override_json = if !context.wallpaper.r#type.eq_ignore_ascii_case("scene")
+            || context.wallpaper.property_overrides.is_empty()
         {
             None
         } else {
-            let overrides = wallpaper
+            let overrides = context
+                .wallpaper
                 .property_overrides
                 .iter()
                 .map(|(id, value)| (id.clone(), PropertyValue::from_json(value)))
@@ -287,14 +268,14 @@ impl SceneDescBuilderExt for SceneDescBuilder {
         let mut builder = SceneTemplate::builder(project_json.to_string_lossy())
             .assets_path(assets_path.to_string_lossy())
             .fps(fps.max(1).min(max_fps))
-            .paused(paused)
+            .paused(context.paused)
             .scaling_mode(scaling_mode)
             .scaling_factor(scaling_factor)
-            .audio_response_enabled(wallpaper.audio.response_enabled)
+            .audio_response_enabled(context.wallpaper.audio.response_enabled)
             .audio_volume(audio_volume.into())
-            .audio_muted(wallpaper.audio.muted)
-            .shader_cache_path(paths.shader_cache_root().to_string_lossy())
-            .force_shader_refresh(force_shader_refresh);
+            .audio_muted(context.wallpaper.audio.muted)
+            .shader_cache_path(context.paths.shader_cache_root().to_string_lossy())
+            .force_shader_refresh(context.force_shader_refresh);
 
         if let Some(json) = property_override_json {
             builder = builder.property_override_json(json);
@@ -302,10 +283,65 @@ impl SceneDescBuilderExt for SceneDescBuilder {
 
         builder
             .build()
-            .map(|template| template.for_display(display))
+            .map(|template| template.for_display(context.display))
             .map_err(|error| BridgeError::Error {
                 kind: BridgeErrorKind::Engine,
                 message: error.to_string(),
             })
+    }
+}
+
+pub struct SceneBuildContext<'a> {
+    display: DisplayDesc,
+    workshop_id: &'a str,
+    wallpaper: &'a WallpaperConfig,
+    monitor: &'a MonitorCfg,
+    displays: &'a [DisplaySnapshotEntry],
+    paused: bool,
+    paths: &'a BridgePaths,
+    force_shader_refresh: bool,
+}
+
+struct RenderOverrideResolver<'a> {
+    wallpaper: &'a WallpaperConfig,
+    monitor: &'a MonitorCfg,
+    display: &'a DisplayDesc,
+    displays: &'a [DisplaySnapshotEntry],
+}
+
+impl<'a> RenderOverrideResolver<'a> {
+    fn resolve(&self) -> Option<&'a MonitorRender> {
+        self.wallpaper
+            .monitors
+            .iter()
+            .find(|render| render.selector == self.monitor.selector)
+            .or_else(|| {
+                self.wallpaper
+                    .monitors
+                    .iter()
+                    .find(|render| self.matches(render))
+            })
+    }
+
+    fn matches(&self, render: &MonitorRender) -> bool {
+        let Some(display_snapshot) = self.display_snapshot() else {
+            return false;
+        };
+
+        if render.selector == crate::config::SerializedSelector::Primary {
+            return self
+                .displays
+                .first()
+                .is_some_and(|primary| display_snapshot.matches_primary(primary));
+        }
+
+        let render_selector = render.selector.to_selector();
+        render_selector.matches_display(display_snapshot)
+    }
+
+    fn display_snapshot(&self) -> Option<&'a DisplaySnapshotEntry> {
+        self.displays
+            .iter()
+            .find(|display| display.desc.same_physical_display(self.display))
     }
 }

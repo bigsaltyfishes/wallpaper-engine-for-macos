@@ -521,6 +521,66 @@ async fn scaling_and_fps_option_edits_apply_to_active_scene_without_reconcile() 
 }
 
 #[tokio::test]
+async fn pending_render_option_edits_apply_to_active_scene_without_reconcile() {
+    let engine = FakeEngineFacade::default();
+    engine.set_snapshot(vec![display_snapshot(7, 75)]);
+    let bridge = BridgeBuilder::new(engine.clone())
+        .with_state(crate::actor::state::BridgeActorState::default())
+        .build()
+        .expect("tokio runtime and config load for wallpaper bridge");
+    bridge
+        .inject_scene_wallpaper_config_for_test("100", "Scene")
+        .await;
+
+    bridge
+        .set_display_config_enabled("100".to_string(), "7".to_string(), true)
+        .await
+        .unwrap();
+    let done = engine.wait_for_next_reconcile();
+    bridge
+        .apply_wallpaper_options("100".to_string())
+        .await
+        .unwrap();
+    assert!(done.wait(Duration::from_secs(2)));
+    assert_eq!(engine.calls().len(), 1);
+    engine.set_snapshot(vec![active_display_snapshot(7, 75, 42)]);
+
+    bridge
+        .edit_scaling_factor("100".to_string(), "7".to_string(), 1.5)
+        .await
+        .unwrap();
+
+    let options = bridge
+        .wallpaper_options_snapshot("100".to_string())
+        .await
+        .unwrap();
+    assert!(options.dirty);
+    assert_f64_close(options.display_configurations[0].scaling_factor, 1.5);
+
+    bridge
+        .apply_wallpaper_options("100".to_string())
+        .await
+        .unwrap();
+
+    assert_eq!(
+        engine.calls().len(),
+        1,
+        "render-only option edits on an active scene must not reconstruct scenes"
+    );
+    assert_eq!(
+        engine.scaling_factor_calls(),
+        vec![(SceneHandle::new(42), 1.5)]
+    );
+    assert!(
+        !bridge
+            .wallpaper_options_snapshot("100".to_string())
+            .await
+            .unwrap()
+            .dirty
+    );
+}
+
+#[tokio::test]
 async fn applying_audio_response_enabled_scene_starts_audio_capture() {
     let engine = FakeEngineFacade::default();
     engine.set_snapshot(vec![display_snapshot(7, 75)]);

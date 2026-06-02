@@ -17,6 +17,8 @@ pub use snapshot::EngineSnapshotPublisher;
 #[cfg(test)]
 use crate::engine::runtime::{RuntimeRefreshMode, SceneRuntimeState};
 #[cfg(test)]
+use crate::engine::state::StoredSceneRuntimeState;
+#[cfg(test)]
 use crate::project::SceneDescSliceExt;
 use crate::{
     DisplayDesc, DisplayIdentity, EngineError,
@@ -1024,6 +1026,24 @@ mod tests {
     }
 
     #[test]
+    fn runtime_refresh_mode_treats_live_audio_response_change_as_unchanged_after_snapshot_sync() {
+        let mut current = crate::project::SceneDesc::new(
+            crate::DisplayDesc::new(1, 0, 0, 1920, 1080, 1.0),
+            "/tmp/project.json",
+            "/tmp/assets",
+            60,
+            false,
+        );
+        current.audio_response_enabled = true;
+        let desired = current.clone();
+
+        assert_eq!(
+            RuntimeRefreshMode::from_transition(Some(&current), &desired),
+            RuntimeRefreshMode::Unchanged
+        );
+    }
+
+    #[test]
     fn close_all_preserves_display_model_records() {
         let identity = crate::DisplayIdentity {
             uuid: Some("external-display".to_string()),
@@ -1062,7 +1082,10 @@ mod tests {
             primary_inheritance_consumed: false,
         });
         record.handle = Some(handle);
-        record.last_runtime_state = Some(last_runtime_state.clone());
+        record.last_runtime_state = Some(StoredSceneRuntimeState::new(
+            desc.clone(),
+            last_runtime_state.clone(),
+        ));
 
         state.close_all().unwrap();
 

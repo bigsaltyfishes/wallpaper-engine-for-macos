@@ -12,7 +12,8 @@ use crate::{
     BridgeWallpaperKind, WallpaperBridge,
     api::BridgeBuilder,
     config::{
-        AppConfig, ConfigStore, MonitorCfg, MonitorSettingsCfg, SerializedSelector, WallpaperConfig,
+        AppConfig, ConfigStore, MonitorCfg, MonitorRender, MonitorSettingsCfg, SerializedSelector,
+        WallpaperConfig,
     },
     engine::FakeEngineFacade,
     login::{LaunchAtLoginController, LaunchAtLoginStatus},
@@ -1693,6 +1694,66 @@ async fn wallpaper_options_report_display_disabled_when_another_wallpaper_owns_i
         bridge.app_snapshot().await.unwrap().active_wallpaper_ids,
         vec!["200".to_string()]
     );
+}
+
+#[tokio::test]
+async fn switching_primary_wallpaper_uses_new_wallpaper_saved_scaling_mode() {
+    let display = identified_display("primary", 1);
+    let root = tempfile::tempdir().unwrap();
+    let store = ConfigStore::open(root.path().to_path_buf());
+    store.save_app_config(&AppConfig::default()).unwrap();
+    let mut first = WallpaperConfig::new_for("100", "scene");
+    first.monitors.push(MonitorRender {
+        selector: SerializedSelector::Primary,
+        scaling_mode: "fill".to_string(),
+        ..MonitorRender::default()
+    });
+    let mut second = WallpaperConfig::new_for("200", "scene");
+    second.monitors.push(MonitorRender {
+        selector: SerializedSelector::Primary,
+        scaling_mode: "stretch".to_string(),
+        ..MonitorRender::default()
+    });
+    store.save_wallpaper(&first).unwrap();
+    store.save_wallpaper(&second).unwrap();
+
+    let engine = FakeEngineFacade::default();
+    engine.set_snapshot(vec![display]);
+    let bridge = BridgeBuilder::new(engine.clone())
+        .with_config_store(ConfigStore::open(root.path().to_path_buf()))
+        .build()
+        .expect("tokio runtime and config load for wallpaper bridge");
+    bridge
+        .inject_scene_wallpaper_config_for_test("100", "Wallpaper Set A")
+        .await;
+    bridge.replace_wallpaper_config_for_test("100", first).await;
+    bridge
+        .inject_scene_wallpaper_config_for_test("200", "Wallpaper Set B")
+        .await;
+    bridge
+        .replace_wallpaper_config_for_test("200", second)
+        .await;
+
+    apply_primary_wallpaper(&bridge, "100").await;
+    wait_for_reconcile_count(&engine, 1);
+    assert_latest_scene(&engine, 1, "100");
+    assert_eq!(
+        engine.calls().last().expect("initial reconcile")[0].scaling_mode,
+        wallpaper_core::project::ScalingMode::Fill
+    );
+
+    apply_primary_wallpaper(&bridge, "200").await;
+    wait_for_reconcile_count(&engine, 2);
+
+    let calls = engine.calls();
+    let latest = calls.last().expect("switch reconcile");
+    assert_eq!(latest.len(), 1);
+    assert_eq!(
+        latest[0].scaling_mode,
+        wallpaper_core::project::ScalingMode::Stretch,
+        "switching wallpapers must not reuse the previous wallpaper scaling mode"
+    );
+    assert_latest_scene(&engine, 1, "200");
 }
 
 #[tokio::test]

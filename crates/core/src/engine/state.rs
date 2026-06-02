@@ -7,7 +7,7 @@ use crate::{
         runtime::{SceneRuntime, SceneRuntimeState},
         snapshot::EngineSnapshot,
     },
-    project::{SceneHandle, SceneTemplate},
+    project::{SceneDesc, SceneHandle, SceneTemplate},
 };
 
 pub struct EngineState {
@@ -26,7 +26,29 @@ pub struct DisplayRuntimeRecord {
     pub model: DisplayRecord,
     pub handle: Option<SceneHandle>,
     pub runtime: Option<SceneRuntime>,
-    pub last_runtime_state: Option<SceneRuntimeState>,
+    pub last_runtime_state: Option<StoredSceneRuntimeState>,
+}
+
+#[derive(Clone)]
+pub struct StoredSceneRuntimeState {
+    desc: SceneDesc,
+    state: SceneRuntimeState,
+}
+
+impl StoredSceneRuntimeState {
+    #[allow(clippy::single_call_fn)]
+    pub fn new(desc: SceneDesc, state: SceneRuntimeState) -> Self {
+        Self { desc, state }
+    }
+
+    pub fn runtime_state_for_desc(
+        &self,
+        desc: &SceneDesc,
+    ) -> Result<SceneRuntimeState, EngineError> {
+        let mut state = self.state.clone();
+        state.inherit_descriptor_transition(&self.desc, desc)?;
+        Ok(state)
+    }
 }
 
 impl DisplayRuntimeRecord {
@@ -41,6 +63,28 @@ impl DisplayRuntimeRecord {
     fn sync_direct_assignment_from_desc(&mut self, desc: &crate::project::SceneDesc) {
         if let Some(WallpaperAssignment::Direct(template)) = self.model.assignment.as_mut() {
             *template = SceneTemplate::from_scene_desc(desc);
+        }
+    }
+
+    pub fn runtime_state_for_desc(
+        &self,
+        desc: &SceneDesc,
+    ) -> Result<SceneRuntimeState, EngineError> {
+        if let Some(runtime) = self.runtime.as_ref() {
+            return runtime.runtime_state_for_desc(desc);
+        }
+        if let Some(stored) = self.last_runtime_state.as_ref() {
+            return stored.runtime_state_for_desc(desc);
+        }
+        SceneRuntimeState::try_from(desc)
+    }
+
+    pub fn store_runtime_snapshot(&mut self) {
+        if let Some(runtime) = self.runtime.as_ref() {
+            self.last_runtime_state = Some(StoredSceneRuntimeState::new(
+                runtime.desc.clone(),
+                runtime.runtime_state(),
+            ));
         }
     }
 }
@@ -242,15 +286,14 @@ impl EngineState {
                 handle.raw()
             ))
         })?;
-        let runtime_state = self.display_records[index]
-            .runtime
-            .as_ref()
-            .map(SceneRuntime::runtime_state)
-            .ok_or_else(|| {
-                EngineError::InvalidInput(format!("scene handle {} is not active", handle.raw()))
-            })?;
+        if self.display_records[index].runtime.is_none() {
+            return Err(EngineError::InvalidInput(format!(
+                "scene handle {} is not active",
+                handle.raw()
+            )));
+        }
         self.display_records[index].handle = Some(handle);
-        self.display_records[index].last_runtime_state = Some(runtime_state);
+        self.display_records[index].store_runtime_snapshot();
         self.display_records[index].model.runtime_open = true;
         let runtime_desc = self.display_records[index]
             .runtime
@@ -271,9 +314,7 @@ impl EngineState {
         for record in &mut self.display_records {
             record.handle = None;
             record.model.runtime_open = false;
-            if let Some(runtime) = record.runtime.as_ref() {
-                record.last_runtime_state = Some(runtime.runtime_state());
-            }
+            record.store_runtime_snapshot();
             if let Some(runtime) = record.runtime.take() {
                 runtimes.push(runtime);
             }
@@ -300,7 +341,10 @@ mod tests {
     use crate::{
         DisplayDesc, DisplayIdentity, WallpaperAssignment,
         display::state::{DisplayKey, DisplayRecord, DisplayStateModel},
-        engine::{runtime::SceneRuntimeState, state::DisplayRuntimeRecord},
+        engine::{
+            runtime::SceneRuntimeState,
+            state::{DisplayRuntimeRecord, StoredSceneRuntimeState},
+        },
         project::{ScalingMode, SceneDesc, SceneTemplate},
     };
 
@@ -371,16 +415,11 @@ mod tests {
                 .find(|record| record.model.key == DisplayKey::Primary)
                 .expect("primary record should exist");
             primary.handle = Some(primary_handle);
-            primary.last_runtime_state = Some(
-                SceneRuntimeState::try_from(&SceneDesc::new(
-                    old_primary,
-                    "/tmp/shared.json",
-                    "/tmp/assets",
-                    60,
-                    false,
-                ))
-                .unwrap(),
-            );
+            let desc = SceneDesc::new(old_primary, "/tmp/shared.json", "/tmp/assets", 60, false);
+            primary.last_runtime_state = Some(StoredSceneRuntimeState::new(
+                desc.clone(),
+                SceneRuntimeState::try_from(&desc).unwrap(),
+            ));
         }
         {
             let secondary = state
@@ -389,16 +428,11 @@ mod tests {
                 .find(|record| record.model.key == secondary_key)
                 .expect("secondary record should exist");
             secondary.handle = Some(secondary_handle);
-            secondary.last_runtime_state = Some(
-                SceneRuntimeState::try_from(&SceneDesc::new(
-                    old_secondary,
-                    "/tmp/shared.json",
-                    "/tmp/assets",
-                    60,
-                    false,
-                ))
-                .unwrap(),
-            );
+            let desc = SceneDesc::new(old_secondary, "/tmp/shared.json", "/tmp/assets", 60, false);
+            secondary.last_runtime_state = Some(StoredSceneRuntimeState::new(
+                desc.clone(),
+                SceneRuntimeState::try_from(&desc).unwrap(),
+            ));
         }
 
         let mut next = DisplayStateModel {

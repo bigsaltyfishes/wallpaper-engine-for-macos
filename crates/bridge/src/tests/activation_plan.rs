@@ -1,9 +1,14 @@
 use std::collections::BTreeMap;
 
-use wallpaper_core::{DisplayDesc, DisplayIdentity, DisplaySelector, DisplaySnapshotEntry};
+use wallpaper_core::{
+    DisplayDesc, DisplayIdentity, DisplaySelector, DisplaySnapshotEntry, project::ScalingMode,
+};
 
 use crate::{
-    config::{AppConfig, MonitorCfg, MonitorSettingsCfg, SerializedSelector, WallpaperConfig},
+    config::{
+        AppConfig, MonitorCfg, MonitorRender, MonitorSettingsCfg, SerializedSelector,
+        WallpaperConfig,
+    },
     engine::ActivationInputs,
     paths::BridgePaths,
 };
@@ -117,6 +122,93 @@ fn activation_plan_gives_primary_wallpaper_to_current_primary_display() {
     assert_eq!(scenes.len(), 2);
     assert_scene(&scenes, 3, "300");
     assert_scene(&scenes, 1, "100");
+}
+
+#[test]
+fn activation_plan_uses_primary_render_override_for_identity_primary_monitor() {
+    let display = identified_display("primary", 1);
+    let identity_selector =
+        SerializedSelector::from_selector(&DisplaySelector::Identity(display.identity.clone()));
+    let app_config = AppConfig {
+        monitors: vec![MonitorCfg {
+            selector: identity_selector,
+            enabled: true,
+            mode: "independent".to_string(),
+            wallpaper: Some("3539559752".to_string()),
+            mirror_target: None,
+        }],
+        ..AppConfig::default()
+    };
+    let mut wallpaper = WallpaperConfig::new_for("3539559752", "scene");
+    wallpaper.monitors.push(MonitorRender {
+        selector: SerializedSelector::Primary,
+        scaling_mode: "fill".to_string(),
+        ..MonitorRender::default()
+    });
+    let wallpapers = BTreeMap::from([("3539559752".to_string(), wallpaper)]);
+    let paths = BridgePaths::for_home("/Users/example");
+
+    let scenes = ActivationInputs {
+        app_config: &app_config,
+        wallpapers: &wallpapers,
+        displays: &[display],
+        paused: false,
+        paths: &paths,
+        force_shader_refresh: false,
+    }
+    .build()
+    .unwrap();
+
+    assert_eq!(scenes.len(), 1);
+    assert_eq!(
+        scenes[0].scaling_mode,
+        ScalingMode::Fill,
+        "a single-monitor identity assignment must still inherit the saved Primary render override"
+    );
+}
+
+#[test]
+fn activation_plan_uses_identity_render_override_for_primary_monitor() {
+    let display = identified_display("primary", 1);
+    let identity_selector =
+        SerializedSelector::from_selector(&DisplaySelector::Identity(display.identity.clone()));
+    let app_config = AppConfig {
+        monitors: vec![MonitorCfg {
+            selector: SerializedSelector::Primary,
+            enabled: true,
+            mode: "independent".to_string(),
+            wallpaper: Some("3539559752".to_string()),
+            mirror_target: None,
+        }],
+        ..AppConfig::default()
+    };
+    let mut wallpaper = WallpaperConfig::new_for("3539559752", "scene");
+    wallpaper.monitors.push(MonitorRender {
+        selector: identity_selector,
+        scaling_mode: "fill".to_string(),
+        ..MonitorRender::default()
+    });
+    let wallpapers = BTreeMap::from([("3539559752".to_string(), wallpaper)]);
+    let paths = BridgePaths::for_home("/Users/example");
+
+    let scenes = ActivationInputs {
+        app_config: &app_config,
+        wallpapers: &wallpapers,
+        displays: &[display],
+        paused: false,
+        paths: &paths,
+        force_shader_refresh: false,
+    }
+    .build()
+    .unwrap();
+
+    assert_eq!(scenes.len(), 1);
+    assert_eq!(
+        scenes[0].scaling_mode,
+        ScalingMode::Fill,
+        "a Primary assignment must inherit the saved identity render override for the same \
+         primary display"
+    );
 }
 
 fn assert_scene(scenes: &[wallpaper_core::project::SceneDesc], display_id: u32, workshop_id: &str) {

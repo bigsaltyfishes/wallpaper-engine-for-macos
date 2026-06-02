@@ -13,7 +13,7 @@ use crate::{
     engine::{
         EngineSnapshotPublisher,
         messages::{self, Ping},
-        runtime::{RuntimeRefreshJob, RuntimeRefreshMode, SceneRuntime, SceneRuntimeState},
+        runtime::{RuntimeRefreshJob, RuntimeRefreshMode, SceneRuntime},
         state::{DisplayRuntimeRecord, EngineState},
     },
     owe::backend::OweBackend,
@@ -316,11 +316,7 @@ impl EngineActor {
             resolved_model.assignment = model.resolved_assignment(&resolved_model.key)?;
             if !resolved_model.should_have_runtime() {
                 let record = &mut self.state.display_records[index];
-                record.last_runtime_state = record
-                    .runtime
-                    .as_ref()
-                    .map(SceneRuntime::runtime_state)
-                    .or_else(|| record.last_runtime_state.clone());
+                record.store_runtime_snapshot();
                 record.model.runtime_open = false;
                 let key = record.model.key.clone();
                 let runtime = record.runtime.take();
@@ -391,12 +387,7 @@ impl EngineActor {
             }
             let key = self.state.display_records[index].model.key.clone();
             let handle = self.state.reserve_handle_for_key(key.clone());
-            let runtime_state = self.state.display_records[index]
-                .runtime
-                .as_ref()
-                .map(SceneRuntime::runtime_state)
-                .or_else(|| self.state.display_records[index].last_runtime_state.clone())
-                .unwrap_or(SceneRuntimeState::try_from(&desc)?);
+            let runtime_state = self.state.display_records[index].runtime_state_for_desc(&desc)?;
             let existing_runtime = self.state.display_records[index].runtime.take();
             self.state.display_records[index].handle = Some(handle);
             self.state.display_records[index].model.runtime_open = false;
@@ -528,8 +519,8 @@ impl EngineActor {
         if let Some(index) = self.state.record_index(&key) {
             self.state.display_records[index].model.runtime_open = true;
             self.state.display_records[index].handle = Some(handle);
-            self.state.display_records[index].last_runtime_state = Some(runtime.runtime_state());
             self.state.display_records[index].runtime = Some(runtime);
+            self.state.display_records[index].store_runtime_snapshot();
             self.state.handles_by_display.insert(key.clone(), handle);
             self.state.displays_by_handle.insert(handle, key);
         } else {
@@ -555,8 +546,8 @@ impl EngineActor {
         if let Some(index) = self.state.record_index(key) {
             self.state.display_records[index].model.runtime_open = true;
             self.state.display_records[index].handle = Some(handle);
-            self.state.display_records[index].last_runtime_state = Some(runtime.runtime_state());
             self.state.display_records[index].runtime = Some(runtime);
+            self.state.display_records[index].store_runtime_snapshot();
             self.state.handles_by_display.insert(key.clone(), handle);
             self.state.displays_by_handle.insert(handle, key.clone());
         } else {
@@ -915,5 +906,74 @@ impl Message<messages::FailNextRefreshDisplaysForTest> for EngineActor {
     ) -> Self::Reply {
         self.fail_next_refresh_displays = true;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        DisplayDesc, WallpaperAssignment,
+        display::state::{DisplayKey, DisplayRecord, DisplayStateModel},
+        engine::{
+            runtime::SceneRuntimeState,
+            snapshot::EngineSnapshotPublisher,
+            state::{EngineState, StoredSceneRuntimeState},
+        },
+        project::{ScalingMode, SceneDesc, SceneTemplate},
+    };
+
+    #[test]
+    fn runtime_refresh_job_for_new_wallpaper_uses_descriptor_scaling_defaults() {
+        let display = DisplayDesc::new(1, 0, 0, 1920, 1080, 1.0);
+        let previous_desc = SceneDesc::builder(display.clone(), "/tmp/fill/project.json")
+            .assets_path("/tmp/assets")
+            .scaling_mode(ScalingMode::Fill)
+            .build()
+            .expect("previous scene should build");
+        let next_template = SceneTemplate::builder("/tmp/fit/project.json")
+            .assets_path("/tmp/assets")
+            .scaling_mode(ScalingMode::Fit)
+            .build()
+            .expect("next scene should build");
+        let mut state = EngineState::with_display_model(DisplayStateModel {
+            records: vec![DisplayRecord {
+                key: DisplayKey::Primary,
+                live_display: Some(display),
+                assignment: Some(WallpaperAssignment::Direct(next_template)),
+                window_active: true,
+                runtime_open: false,
+                primary_inheritance_consumed: false,
+            }],
+        });
+        state.display_records[0].last_runtime_state = Some(StoredSceneRuntimeState::new(
+            previous_desc.clone(),
+            SceneRuntimeState::try_from(&previous_desc).expect("previous state should build"),
+        ));
+        let snapshots = Arc::new(EngineSnapshotPublisher::new(state.snapshot()));
+        let actor = EngineActor::new(OweBackend, state, snapshots);
+        let runtime_state = actor
+            .state
+            .display_records
+            .first()
+            .expect("primary record should exist")
+            .runtime_state_for_desc(
+                &actor
+                    .state
+                    .display_records
+                    .first()
+                    .expect("primary record should exist")
+                    .scene_desc()
+                    .expect("next scene should build")
+                    .expect("assigned scene should exist"),
+            )
+            .expect("runtime state should build");
+
+        assert_eq!(runtime_state.scaling_mode, ScalingMode::Fit);
+        assert!(
+            (runtime_state.scaling_factor - 1.0).abs() <= f64::EPSILON,
+            "expected descriptor scaling factor 1.0, got {}",
+            runtime_state.scaling_factor
+        );
     }
 }

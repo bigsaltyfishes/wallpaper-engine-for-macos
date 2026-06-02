@@ -48,6 +48,12 @@ pub struct SceneRuntimeState {
     pub property_override_json: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DescriptorInheritance {
+    PreserveRuntimeOverrides,
+    UseDescriptorDefaults,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 enum PropertyOverrideUpdate<'a> {
     Unchanged,
@@ -189,7 +195,16 @@ impl SceneRuntime {
         let descriptor_state = SceneRuntimeState::try_from(desc)?;
         let mut stored_desc = desc.clone();
         stored_desc.mark_shader_refresh_complete();
-        state.inherit_descriptor_property_override(&current_descriptor_state, &descriptor_state);
+        let inheritance = if self.desc.same_wallpaper(desc) {
+            DescriptorInheritance::PreserveRuntimeOverrides
+        } else {
+            DescriptorInheritance::UseDescriptorDefaults
+        };
+        state.inherit_descriptor_defaults(
+            &current_descriptor_state,
+            &descriptor_state,
+            inheritance,
+        );
         let old_display = self.desc.display.clone();
         let window = self.window.as_mut().ok_or_else(|| {
             EngineError::Platform("wallpaper window is already closed".to_string())
@@ -211,8 +226,8 @@ impl SceneRuntime {
         let mut renderer = match backend.open_scene(
             desc,
             metal_layer,
-            self.scaling_mode,
-            self.scaling_factor,
+            state.scaling_mode,
+            state.scaling_factor,
             render_resolution,
         ) {
             Ok(renderer) => renderer,
@@ -231,7 +246,12 @@ impl SceneRuntime {
         }
         let mut old_renderer = std::mem::replace(&mut self.renderer, renderer);
         self.desc = stored_desc;
+        self.scaling_mode = state.scaling_mode;
+        self.scaling_factor = state.scaling_factor;
         self.render_resolution = render_resolution;
+        self.audio_response_enabled = state.audio_response_enabled;
+        self.audio_volume = state.audio_volume;
+        self.audio_muted = state.audio_muted;
         self.property_override_json = state.property_override_json;
         old_renderer.close()
     }
@@ -330,18 +350,21 @@ impl SceneRuntime {
     pub fn set_audio_response_enabled(&mut self, enabled: bool) -> Result<(), EngineError> {
         self.renderer.set_audio_response_enabled(enabled)?;
         self.audio_response_enabled = enabled;
+        self.desc.audio_response_enabled = enabled;
         Ok(())
     }
 
     pub fn set_audio_volume(&mut self, volume: AudioVolume) -> Result<(), EngineError> {
         self.renderer.set_audio_volume(volume)?;
         self.audio_volume = volume;
+        self.desc.audio_volume = volume;
         Ok(())
     }
 
     pub fn set_audio_muted(&mut self, muted: bool) -> Result<(), EngineError> {
         self.renderer.set_audio_muted(muted)?;
         self.audio_muted = muted;
+        self.desc.audio_muted = muted;
         Ok(())
     }
 
@@ -379,6 +402,15 @@ impl SceneRuntime {
         }
     }
 
+    pub(crate) fn runtime_state_for_desc(
+        &self,
+        desc: &SceneDesc,
+    ) -> Result<SceneRuntimeState, EngineError> {
+        let mut state = self.runtime_state();
+        state.inherit_descriptor_transition(&self.desc, desc)?;
+        Ok(state)
+    }
+
     fn apply_runtime_properties(
         &mut self,
         descriptor_state: &SceneRuntimeState,
@@ -395,6 +427,26 @@ impl Drop for SceneRuntime {
 }
 
 impl SceneRuntimeState {
+    pub(crate) fn inherit_descriptor_transition(
+        &mut self,
+        current_desc: &SceneDesc,
+        next_desc: &SceneDesc,
+    ) -> Result<(), EngineError> {
+        let current_descriptor_state = Self::try_from(current_desc)?;
+        let next_descriptor_state = Self::try_from(next_desc)?;
+        let inheritance = if current_desc.same_wallpaper(next_desc) {
+            DescriptorInheritance::PreserveRuntimeOverrides
+        } else {
+            DescriptorInheritance::UseDescriptorDefaults
+        };
+        self.inherit_descriptor_defaults(
+            &current_descriptor_state,
+            &next_descriptor_state,
+            inheritance,
+        );
+        Ok(())
+    }
+
     fn apply_to(
         &self,
         renderer: &mut OweScene,
@@ -443,6 +495,23 @@ impl SceneRuntimeState {
         if self.property_override_json == current_descriptor_state.property_override_json {
             self.property_override_json
                 .clone_from(&next_descriptor_state.property_override_json);
+        }
+    }
+
+    fn inherit_descriptor_defaults(
+        &mut self,
+        current_descriptor_state: &SceneRuntimeState,
+        next_descriptor_state: &SceneRuntimeState,
+        inheritance: DescriptorInheritance,
+    ) {
+        self.inherit_descriptor_property_override(current_descriptor_state, next_descriptor_state);
+
+        if inheritance == DescriptorInheritance::UseDescriptorDefaults {
+            self.scaling_mode = next_descriptor_state.scaling_mode;
+            self.scaling_factor = next_descriptor_state.scaling_factor;
+            self.audio_response_enabled = next_descriptor_state.audio_response_enabled;
+            self.audio_volume = next_descriptor_state.audio_volume;
+            self.audio_muted = next_descriptor_state.audio_muted;
         }
     }
 }
@@ -566,6 +635,98 @@ mod tests {
             state.property_override_update(&next_descriptor_state),
             PropertyOverrideUpdate::Reset
         ));
+    }
+
+    #[test]
+    fn different_wallpaper_rebuild_uses_next_descriptor_render_defaults() {
+        let mut state = runtime_state(None);
+        state.scaling_mode = ScalingMode::Fill;
+        state.scaling_factor = 1.25;
+        state.audio_response_enabled = true;
+        let mut current_descriptor_state = runtime_state(None);
+        current_descriptor_state.scaling_mode = ScalingMode::Fill;
+        current_descriptor_state.scaling_factor = 1.25;
+        current_descriptor_state.audio_response_enabled = true;
+        let mut next_descriptor_state = runtime_state(None);
+        next_descriptor_state.scaling_mode = ScalingMode::Stretch;
+        next_descriptor_state.scaling_factor = 2.0;
+        next_descriptor_state.audio_response_enabled = false;
+
+        state.inherit_descriptor_defaults(
+            &current_descriptor_state,
+            &next_descriptor_state,
+            DescriptorInheritance::UseDescriptorDefaults,
+        );
+
+        assert_eq!(state.scaling_mode, ScalingMode::Stretch);
+        assert!(
+            (state.scaling_factor - 2.0).abs() <= f64::EPSILON,
+            "expected scaling factor {} to be within f64::EPSILON of 2.0",
+            state.scaling_factor
+        );
+        assert!(!state.audio_response_enabled);
+    }
+
+    #[test]
+    fn live_runtime_transition_state_for_new_wallpaper_uses_descriptor_scaling_defaults() {
+        let current_desc = SceneDesc::builder(
+            crate::DisplayDesc::new(1, 0, 0, 1920, 1080, 1.0),
+            "/tmp/current/project.json",
+        )
+        .assets_path("/tmp/assets")
+        .scaling_mode(ScalingMode::Fill)
+        .scaling_factor(1.25)
+        .build()
+        .expect("current scene should build");
+        let next_desc = SceneDesc::builder(
+            crate::DisplayDesc::new(1, 0, 0, 1920, 1080, 1.0),
+            "/tmp/next/project.json",
+        )
+        .assets_path("/tmp/assets")
+        .scaling_mode(ScalingMode::Fit)
+        .scaling_factor(1.0)
+        .build()
+        .expect("next scene should build");
+        let mut state =
+            SceneRuntimeState::try_from(&current_desc).expect("current state should build");
+
+        state
+            .inherit_descriptor_transition(&current_desc, &next_desc)
+            .expect("transition should build");
+
+        assert_eq!(state.scaling_mode, ScalingMode::Fit);
+        assert!(
+            (state.scaling_factor - 1.0).abs() <= f64::EPSILON,
+            "expected descriptor scaling factor 1.0, got {}",
+            state.scaling_factor
+        );
+    }
+
+    #[test]
+    fn same_wallpaper_rebuild_preserves_explicit_runtime_render_overrides() {
+        let mut state = runtime_state(None);
+        state.scaling_mode = ScalingMode::Fill;
+        state.scaling_factor = 1.25;
+        state.audio_response_enabled = false;
+        let current_descriptor_state = runtime_state(None);
+        let mut next_descriptor_state = runtime_state(None);
+        next_descriptor_state.scaling_mode = ScalingMode::Stretch;
+        next_descriptor_state.scaling_factor = 2.0;
+        next_descriptor_state.audio_response_enabled = true;
+
+        state.inherit_descriptor_defaults(
+            &current_descriptor_state,
+            &next_descriptor_state,
+            DescriptorInheritance::PreserveRuntimeOverrides,
+        );
+
+        assert_eq!(state.scaling_mode, ScalingMode::Fill);
+        assert!(
+            (state.scaling_factor - 1.25).abs() <= f64::EPSILON,
+            "expected scaling factor {} to be within f64::EPSILON of 1.25",
+            state.scaling_factor
+        );
+        assert!(!state.audio_response_enabled);
     }
 
     #[test]
