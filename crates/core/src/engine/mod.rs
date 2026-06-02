@@ -5,7 +5,10 @@ mod runtime;
 mod snapshot;
 mod state;
 
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::HashSet,
+    sync::{Arc, Mutex},
+};
 
 use actor::{EngineActor, EngineActorHandle};
 pub use config::{DisplayConfig, DisplaySelector, WallpaperAssignment, WallpaperEngineConfig};
@@ -631,11 +634,13 @@ impl WallpaperEngine {
     }
 
     async fn poll_mouse_state(&self, state: MousePollState) -> Result<(), EngineError> {
-        for entry in self.display_snapshot() {
+        let snapshot = self.display_snapshot();
+        let snapshot = DisplaySnapshot { entries: &snapshot };
+        for entry in snapshot.entries {
             let Some(handle) = entry.handle else {
                 continue;
             };
-            let update = mouse_update_for_display(state, &entry.desc);
+            let update = snapshot.mouse_update_for_entry(state, entry);
             self.set_mouse_entered(handle, update.entered).await?;
             if let Some(position) = update.position {
                 self.set_mouse_position(handle, position.x, position.y)
@@ -647,6 +652,69 @@ impl WallpaperEngine {
             }
         }
         Ok(())
+    }
+}
+
+struct DisplaySnapshot<'a> {
+    entries: &'a [DisplaySnapshotEntry],
+}
+
+impl<'a> DisplaySnapshot<'a> {
+    fn mouse_update_for_entry(
+        &self,
+        state: MousePollState,
+        entry: &DisplaySnapshotEntry,
+    ) -> MouseDisplayUpdate {
+        match &entry.assignment {
+            Some(WallpaperAssignment::Mirror(selector)) => {
+                let mirror_update = mouse_update_for_display(state, &entry.desc);
+                if mirror_update.entered {
+                    return mirror_update;
+                }
+                self.source_display(selector)
+                    .map_or(mirror_update, |source| {
+                        mouse_update_for_display(state, &source.desc)
+                    })
+            }
+            _ => mouse_update_for_display(state, &entry.desc),
+        }
+    }
+
+    fn source_display(&self, selector: &DisplaySelector) -> Option<&'a DisplaySnapshotEntry> {
+        let mut seen = HashSet::new();
+        self.source_display_inner(selector, &mut seen)
+    }
+
+    fn source_display_inner(
+        &self,
+        selector: &DisplaySelector,
+        seen: &mut HashSet<DisplaySelector>,
+    ) -> Option<&'a DisplaySnapshotEntry> {
+        if !seen.insert(selector.clone()) {
+            return None;
+        }
+
+        let entry = self.selected_display(selector)?;
+        match &entry.assignment {
+            Some(WallpaperAssignment::Mirror(source_selector)) => {
+                self.source_display_inner(source_selector, seen)
+            }
+            _ => Some(entry),
+        }
+    }
+
+    fn selected_display(&self, selector: &DisplaySelector) -> Option<&'a DisplaySnapshotEntry> {
+        match selector {
+            DisplaySelector::Primary => self.entries.first(),
+            DisplaySelector::Identity(identity) => self
+                .entries
+                .iter()
+                .find(|entry| entry.identity.match_score(identity).is_some()),
+            DisplaySelector::LiveDisplayId(display_id) => self
+                .entries
+                .iter()
+                .find(|entry| entry.desc.display_id == *display_id),
+        }
     }
 }
 
@@ -1521,6 +1589,159 @@ mod tests {
         };
 
         assert!(record.should_have_runtime());
+    }
+
+    #[test]
+    fn mirror_mouse_update_uses_source_display_geometry() {
+        let source = DisplaySnapshotEntry {
+            identity: crate::DisplayIdentity::default(),
+            desc: crate::DisplayDesc::new(1, 0, 0, 1920, 1080, 1.0),
+            handle: Some(crate::project::SceneHandle::new(1)),
+            window_active: true,
+            assignment: Some(crate::WallpaperAssignment::Direct(
+                crate::project::SceneTemplate::builder("/tmp/project.json")
+                    .build()
+                    .expect("source template should build"),
+            )),
+        };
+        let mirror = DisplaySnapshotEntry {
+            identity: crate::DisplayIdentity::default(),
+            desc: crate::DisplayDesc::new(2, 1920, 0, 1920, 1080, 1.0),
+            handle: Some(crate::project::SceneHandle::new(2)),
+            window_active: true,
+            assignment: Some(crate::WallpaperAssignment::Mirror(
+                crate::DisplaySelector::Primary,
+            )),
+        };
+        let state = MousePollState {
+            point: NSPoint::new(960.0, 540.0),
+            buttons: MouseButtonEdges::from_masks(1, 1, 0),
+        };
+        let snapshot = vec![source, mirror];
+        let snapshot = DisplaySnapshot { entries: &snapshot };
+
+        let update = snapshot.mouse_update_for_entry(state, &snapshot.entries[1]);
+
+        assert!(update.entered);
+        assert_eq!(
+            update.position,
+            Some(
+                NormalizedMousePosition::from_window_point(960.0, 540.0, 1920.0, 1080.0)
+                    .expect("source point should normalize")
+            )
+        );
+        assert_eq!(
+            update.buttons.transitions(),
+            vec![MouseButtonState {
+                button: 0,
+                pressed: true,
+            }]
+        );
+    }
+
+    #[test]
+    fn mirror_mouse_update_uses_mirror_display_geometry_for_local_cursor() {
+        let source = DisplaySnapshotEntry {
+            identity: crate::DisplayIdentity::default(),
+            desc: crate::DisplayDesc::new(1, 0, 0, 1920, 1080, 1.0),
+            handle: Some(crate::project::SceneHandle::new(1)),
+            window_active: true,
+            assignment: Some(crate::WallpaperAssignment::Direct(
+                crate::project::SceneTemplate::builder("/tmp/project.json")
+                    .build()
+                    .expect("source template should build"),
+            )),
+        };
+        let mirror = DisplaySnapshotEntry {
+            identity: crate::DisplayIdentity::default(),
+            desc: crate::DisplayDesc::new(2, 1920, 0, 2560, 1440, 1.0),
+            handle: Some(crate::project::SceneHandle::new(2)),
+            window_active: true,
+            assignment: Some(crate::WallpaperAssignment::Mirror(
+                crate::DisplaySelector::Primary,
+            )),
+        };
+        let state = MousePollState {
+            point: NSPoint::new(2560.0, 360.0),
+            buttons: MouseButtonEdges::from_masks(1, 1, 0),
+        };
+        let snapshot = vec![source, mirror];
+        let snapshot = DisplaySnapshot { entries: &snapshot };
+
+        let update = snapshot.mouse_update_for_entry(state, &snapshot.entries[1]);
+
+        assert!(update.entered);
+        assert_eq!(
+            update.position,
+            Some(
+                NormalizedMousePosition::from_window_point(640.0, 360.0, 2560.0, 1440.0)
+                    .expect("mirror point should normalize")
+            )
+        );
+        assert_eq!(
+            update.buttons.transitions(),
+            vec![MouseButtonState {
+                button: 0,
+                pressed: true,
+            }]
+        );
+    }
+
+    #[test]
+    fn mirror_mouse_update_resolves_source_display_through_mirror_chain() {
+        let source = DisplaySnapshotEntry {
+            identity: crate::DisplayIdentity::default(),
+            desc: crate::DisplayDesc::new(1, 0, 0, 1920, 1080, 1.0),
+            handle: Some(crate::project::SceneHandle::new(1)),
+            window_active: true,
+            assignment: Some(crate::WallpaperAssignment::Direct(
+                crate::project::SceneTemplate::builder("/tmp/project.json")
+                    .build()
+                    .expect("source template should build"),
+            )),
+        };
+        let intermediate = DisplaySnapshotEntry {
+            identity: crate::DisplayIdentity::default(),
+            desc: crate::DisplayDesc::new(2, 1920, 0, 1920, 1080, 1.0),
+            handle: Some(crate::project::SceneHandle::new(2)),
+            window_active: true,
+            assignment: Some(crate::WallpaperAssignment::Mirror(
+                crate::DisplaySelector::Primary,
+            )),
+        };
+        let final_mirror = DisplaySnapshotEntry {
+            identity: crate::DisplayIdentity::default(),
+            desc: crate::DisplayDesc::new(3, 3840, 0, 1920, 1080, 1.0),
+            handle: Some(crate::project::SceneHandle::new(3)),
+            window_active: true,
+            assignment: Some(crate::WallpaperAssignment::Mirror(
+                crate::DisplaySelector::LiveDisplayId(2),
+            )),
+        };
+        let state = MousePollState {
+            point: NSPoint::new(960.0, 540.0),
+            buttons: MouseButtonEdges::from_masks(1, 1, 0),
+        };
+        let snapshot = vec![source, intermediate, final_mirror];
+        let snapshot = DisplaySnapshot { entries: &snapshot };
+
+        let update = snapshot.mouse_update_for_entry(state, &snapshot.entries[2]);
+
+        assert!(update.entered);
+        assert_eq!(
+            update.position,
+            Some(
+                NormalizedMousePosition::from_window_point(960.0, 540.0, 1920.0, 1080.0)
+                    .expect("source point should normalize")
+            )
+        );
+        assert_eq!(
+            update.buttons.transitions(),
+            vec![MouseButtonState {
+                button: 0,
+                pressed: true,
+            }]
+        );
     }
 
     #[test]
