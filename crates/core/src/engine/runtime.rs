@@ -228,8 +228,11 @@ impl SceneRuntime {
     }
 
     pub fn set_scaling_mode(&mut self, mode: ScalingMode) -> Result<(), EngineError> {
-        if let RuntimeContent::Scene(renderer) = &mut self.content {
-            renderer.set_scaling_mode(mode)?;
+        match &mut self.content {
+            RuntimeContent::Scene(renderer) => renderer.set_scaling_mode(mode)?,
+            RuntimeContent::Web(runtime) => runtime
+                .set_scaling_mode(mode.to_string().as_str())
+                .map_err(web_error_to_engine)?,
         }
         self.scaling_mode = mode;
         self.desc.scaling_mode = mode;
@@ -237,8 +240,11 @@ impl SceneRuntime {
     }
 
     pub fn set_scaling_factor(&mut self, factor: f64) -> Result<(), EngineError> {
-        if let RuntimeContent::Scene(renderer) = &mut self.content {
-            renderer.set_scaling_factor(factor)?;
+        match &mut self.content {
+            RuntimeContent::Scene(renderer) => renderer.set_scaling_factor(factor)?,
+            RuntimeContent::Web(runtime) => runtime
+                .set_scaling_factor(factor)
+                .map_err(web_error_to_engine)?,
         }
         self.scaling_factor = factor;
         self.desc.scaling_factor = factor;
@@ -246,8 +252,11 @@ impl SceneRuntime {
     }
 
     pub fn set_fps(&mut self, fps: u32) -> Result<(), EngineError> {
-        if let RuntimeContent::Scene(renderer) = &mut self.content {
-            renderer.set_target_fps(fps)?;
+        match &mut self.content {
+            RuntimeContent::Scene(renderer) => renderer.set_target_fps(fps)?,
+            RuntimeContent::Web(runtime) => {
+                runtime.set_fps(fps).map_err(web_error_to_engine)?;
+            }
         }
         self.desc.fps = fps;
         Ok(())
@@ -590,6 +599,13 @@ impl SceneRuntime {
                         .dispatch_properties(&properties)
                         .map_err(web_error_to_engine)?;
                 }
+                runtime
+                    .set_scaling_mode(self.desc.scaling_mode.to_string().as_str())
+                    .map_err(web_error_to_engine)?;
+                runtime
+                    .set_scaling_factor(self.desc.scaling_factor)
+                    .map_err(web_error_to_engine)?;
+                runtime.set_fps(self.desc.fps).map_err(web_error_to_engine)?;
             }
         }
         Ok(())
