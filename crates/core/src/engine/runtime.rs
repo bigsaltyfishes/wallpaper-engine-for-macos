@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use serde_json::Value;
 
 use crate::{
@@ -19,8 +21,6 @@ pub struct SceneRuntime {
     handle: SceneHandle,
     /// Engine-level callback invoked after OWE renders the first frame.
     first_frame_callback: FirstFrameCallback,
-    /// Opaque Open Wallpaper Engine renderer object.
-    renderer: OweScene,
     /// Active wallpaper content for this runtime.
     content: RuntimeContent,
     /// Runtime override applied after descriptor defaults.
@@ -179,6 +179,8 @@ impl SceneRuntime {
             );
             let mut runtime = Self {
                 desc: stored_desc,
+                handle,
+                first_frame_callback,
                 content: RuntimeContent::Web(web_runtime),
                 scaling_mode: state.scaling_mode,
                 scaling_factor: state.scaling_factor,
@@ -211,6 +213,8 @@ impl SceneRuntime {
         let descriptor_state = SceneRuntimeState::try_from(desc)?;
         let mut runtime = Self {
             desc: desc.clone(),
+            handle,
+            first_frame_callback,
             content: RuntimeContent::Scene(renderer),
             scaling_mode: state.scaling_mode,
             scaling_factor: state.scaling_factor,
@@ -310,7 +314,13 @@ impl SceneRuntime {
             || WebRuntime::resolve_entry(desc)?.is_some()
         {
             let state = self.runtime_state();
-            let mut replacement = Self::open(backend, desc, state)?;
+            let mut replacement = Self::open(
+                backend,
+                self.first_frame_callback.clone(),
+                self.handle,
+                desc,
+                state,
+            )?;
             replacement.render_resolution = render_resolution;
             let mut old = std::mem::replace(self, replacement);
             return old.close();
@@ -395,7 +405,13 @@ impl SceneRuntime {
         desc: &SceneDesc,
     ) -> Result<(), EngineError> {
         let state = self.runtime_state();
-        let replacement = Self::open(backend, desc, state)?;
+        let replacement = Self::open(
+            backend,
+            self.first_frame_callback.clone(),
+            self.handle,
+            desc,
+            state,
+        )?;
         let mut old = std::mem::replace(self, replacement);
         old.close()
     }
@@ -416,6 +432,12 @@ impl SceneRuntime {
         let mut desc = self.desc.clone();
         desc.display = display;
         self.rebuild_for_desc(backend, &desc, self.render_resolution)
+    }
+
+    fn renderer_first_frame_callback(&self) -> crate::owe::backend::FirstFrameCallback {
+        let callback = self.first_frame_callback.clone();
+        let handle = self.handle;
+        Arc::new(move || callback(handle))
     }
 
     pub fn update_window_display(&mut self, display: DisplayDesc) -> Result<(), EngineError> {
@@ -605,7 +627,9 @@ impl SceneRuntime {
                 runtime
                     .set_scaling_factor(self.desc.scaling_factor)
                     .map_err(web_error_to_engine)?;
-                runtime.set_fps(self.desc.fps).map_err(web_error_to_engine)?;
+                runtime
+                    .set_fps(self.desc.fps)
+                    .map_err(web_error_to_engine)?;
             }
         }
         Ok(())

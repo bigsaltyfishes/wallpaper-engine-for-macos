@@ -560,9 +560,7 @@ impl PropertyDispatcher {
 
     pub fn evaluate_js(&self, script: &str) -> Result<(), WebError> {
         let Some(content_view) = self.content_view.as_ref() else {
-            return Err(WebError::Platform(
-                "web dispatcher is closed".to_string(),
-            ));
+            return Err(WebError::Platform("web dispatcher is closed".to_string()));
         };
         let content_view = ObjcPtr::new(content_view.as_ptr().cast());
         let script = script.to_string();
