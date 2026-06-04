@@ -215,6 +215,8 @@ pub struct BridgeSettingsSnapshot {
     pub core_version: String,
     pub shader_pipeline_version: String,
     pub storage: BridgeStorageStatus,
+    pub workshop_dir: String,
+    pub assets_dir: String,
 }
 
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
