@@ -370,6 +370,7 @@ impl BridgeActorState {
             },
             bridge_version: env!("CARGO_PKG_VERSION").to_string(),
             core_version: wallpaper_core::VERSION.to_string(),
+            web_version: wallpaper_core::WEB_VERSION.to_string(),
             shader_pipeline_version: SHADER_PIPELINE_VERSION.to_string(),
             storage: BridgeStorageStatus {
                 shader_cache_size_bytes: directory_size(&paths.shader_cache_root()),

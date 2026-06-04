@@ -213,6 +213,7 @@ pub struct BridgeSettingsSnapshot {
     pub git_sha: String,
     pub bridge_version: String,
     pub core_version: String,
+    pub web_version: String,
     pub shader_pipeline_version: String,
     pub storage: BridgeStorageStatus,
 }
