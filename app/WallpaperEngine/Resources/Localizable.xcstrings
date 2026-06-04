@@ -1744,6 +1744,38 @@
         }
       }
     },
+    "Select the wallpaper workshop directory" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select the wallpaper workshop directory"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择创意工坊目录"
+          }
+        }
+      }
+    },
+    "Select the assets directory" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select the assets directory"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择资源目录"
+          }
+        }
+      }
+    },
     "Workshop Directory" : {
       "extractionState" : "manual",
       "localizations" : {

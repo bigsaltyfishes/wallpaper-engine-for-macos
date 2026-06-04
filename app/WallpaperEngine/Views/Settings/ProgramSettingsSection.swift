@@ -34,7 +34,7 @@ struct ProgramSettingsSection: View {
 
             LabeledContent {
                 HStack(spacing: 8) {
-                    Text(store.settingsSnapshot.workshopDir)
+                    Text(verbatim: store.settingsSnapshot.workshopDir)
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .frame(maxWidth: 200, alignment: .leading)
@@ -54,7 +54,7 @@ struct ProgramSettingsSection: View {
 
             LabeledContent {
                 HStack(spacing: 8) {
-                    Text(store.settingsSnapshot.assetsDir)
+                    Text(verbatim: store.settingsSnapshot.assetsDir)
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .frame(maxWidth: 200, alignment: .leading)
@@ -203,8 +203,7 @@ struct ProgramSettingsSection: View {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
-        panel.message = "Select the wallpaper workshop directory"
-        panel.prompt = "Select"
+        panel.message = String(localized: "Select the wallpaper workshop directory")
 
         if panel.runModal() == .OK {
             guard let url = panel.url else { return }
@@ -219,8 +218,7 @@ struct ProgramSettingsSection: View {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
-        panel.message = "Select the assets directory"
-        panel.prompt = "Select"
+        panel.message = String(localized: "Select the assets directory")
 
         if panel.runModal() == .OK {
             guard let url = panel.url else { return }

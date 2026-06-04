@@ -2002,6 +2002,7 @@ impl<E: EngineFacade + Clone> Message<SetWorkshopDir> for BridgeActor<E> {
         self.state.app_config.general.workshop_dir = Some(msg.dir);
         self.persist_app_config()?;
         self.refresh_library()?;
+        self.bump_generation();
         Ok(self.all_snapshots())
     }
 }
@@ -2059,6 +2060,7 @@ impl<E: EngineFacade + Clone> Message<SetAssetsDir> for BridgeActor<E> {
         self.paths.assets_dir = Some(PathBuf::from(&msg.dir));
         self.state.app_config.general.assets_dir = Some(msg.dir);
         self.persist_app_config()?;
+        self.bump_generation();
         Ok(self.all_snapshots())
     }
 }
