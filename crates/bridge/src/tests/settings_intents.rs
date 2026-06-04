@@ -2030,6 +2030,7 @@ async fn mirror_display_settings_apply_to_concrete_mirror_scene() {
     );
     assert_f64_close(mirror.scaling_factor, 1.25);
     assert_eq!(mirror.fps, 30);
+    assert!(!mirror.horizontal_flip);
 
     let calls_before = engine.calls().len();
     bridge
@@ -2085,6 +2086,22 @@ async fn mirror_display_settings_apply_to_concrete_mirror_scene() {
     assert_eq!(row.scaling_mode, BridgeScalingMode::Stretch);
     assert_f64_close(row.scaling_factor, 1.5);
     assert_eq!(row.target_fps, 45);
+}
+
+#[tokio::test]
+async fn display_horizontal_flip_rebuilds_scene_and_updates_settings_row() {
+    let (bridge, engine, _secondary_display_id) = mirrored_wallpaper_bridge().await;
+
+    bridge
+        .set_display_horizontal_flip("primary".to_string(), true)
+        .await
+        .unwrap();
+
+    let primary = latest_scene(&engine, 1);
+    assert!(primary.horizontal_flip);
+
+    let row = settings_row(&bridge, "primary").await;
+    assert!(row.horizontal_flip);
 }
 
 #[tokio::test]
@@ -2349,6 +2366,7 @@ async fn mirrored_wallpaper_bridge() -> (WallpaperBridge, FakeEngineFacade, Stri
                 target_fps: 30,
                 volume: 0.2,
                 muted: true,
+                horizontal_flip: false,
             }],
             ..AppConfig::default()
         })

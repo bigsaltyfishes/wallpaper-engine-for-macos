@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, HashSet},
     fs,
+    path::PathBuf,
     sync::Arc,
 };
 
@@ -31,7 +32,7 @@ use crate::{
             SetDisplayMode, SetFilter, SetGlobalPlayback, SetLaunchAtLogin, SetMirrorMuted,
             SetMirrorScalingFactor, SetMirrorScalingMode, SetMirrorTarget, SetMirrorTargetFps,
             SetMirrorVolume, SetMuted, SetPauseOnBatteryPower, SetPowerSource, SetScalingFactor,
-            SetScalingMode, SetTargetFps, SetVolume, Shutdown,
+            SetScalingMode, SetTargetFps, SetVolume, Shutdown, SetDisplayHorizontalFlip,
         },
         state::BridgeActorState,
     },
@@ -525,6 +526,13 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
         Ok(())
     }
 
+    fn persist_app_config(&mut self) -> Result<(), BridgeError> {
+        if let Some(store) = &self.config_store {
+            store.save_app_config(&self.state.app_config)?;
+        }
+        Ok(())
+    }
+
     fn save_wallpaper(
         &mut self,
         wallpaper_id: String,
@@ -538,7 +546,7 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
     }
 
     fn refresh_library(&mut self) -> Result<(), BridgeError> {
-        let workshop_root = BridgePaths::new().steam_workshop_root();
+        let workshop_root = self.paths.steam_workshop_root();
         let entries = scan(&workshop_root)?;
         let project_models = entries
             .iter()
@@ -1318,7 +1326,9 @@ impl<E: EngineFacade + Clone> Message<InjectWallpaperForTest> for BridgeActor<E>
             kind: msg.kind,
             supported: matches!(
                 msg.kind,
-                BridgeWallpaperKind::ProjectScene | BridgeWallpaperKind::Video
+                BridgeWallpaperKind::ProjectScene
+                    | BridgeWallpaperKind::Video
+                    | BridgeWallpaperKind::Webpage
             ),
             active: false,
             selected: false,
@@ -1427,6 +1437,7 @@ impl<E: EngineFacade + Clone> Message<InjectDisplayForTest> for BridgeActor<E> {
                 max_fps: 60,
                 muted: false,
                 volume: 1.0,
+                horizontal_flip: false,
             },
         );
         let ids = self
@@ -1683,6 +1694,37 @@ impl<E: EngineFacade + Clone> Message<SetDisplayMode> for BridgeActor<E> {
             }
         }
 
+        let display_settings = self.display_rows(&app_config, &displays);
+        reply_try!(Self::validate_display_settings(
+            &app_config,
+            &displays,
+            &display_settings,
+        ));
+        self.delegate_display(app_config, display_settings, ctx)
+    }
+}
+
+impl<E: EngineFacade + Clone> Message<SetDisplayHorizontalFlip> for BridgeActor<E> {
+    type Reply = DelegatedReply<messages::SetDisplayHorizontalFlipReply>;
+
+    async fn handle(
+        &mut self,
+        msg: SetDisplayHorizontalFlip,
+        ctx: &mut Context<Self, Self::Reply>,
+    ) -> Self::Reply {
+        macro_rules! reply_try {
+            ($expr:expr) => {
+                match $expr {
+                    Ok(value) => value,
+                    Err(error) => return ctx.reply(Err(error)),
+                }
+            };
+        }
+
+        let displays = self.engine.display_snapshot();
+        let selector = reply_try!(self.selector_for(&msg.display_id, &displays));
+        let mut app_config = self.normalized_config(&displays);
+        Self::monitor_settings_mut(&mut app_config, selector).horizontal_flip = msg.enabled;
         let display_settings = self.display_rows(&app_config, &displays);
         reply_try!(Self::validate_display_settings(
             &app_config,
@@ -1982,6 +2024,22 @@ impl<E: EngineFacade + Clone> Message<SetPauseOnBatteryPower> for BridgeActor<E>
     }
 }
 
+impl<E: EngineFacade + Clone> Message<SetWorkshopDir> for BridgeActor<E> {
+    type Reply = messages::SetWorkshopDirReply;
+
+    async fn handle(
+        &mut self,
+        msg: SetWorkshopDir,
+        _ctx: &mut Context<Self, Self::Reply>,
+    ) -> Self::Reply {
+        self.paths.workshop_dir = Some(PathBuf::from(&msg.dir));
+        self.state.app_config.general.workshop_dir = Some(msg.dir);
+        self.persist_app_config()?;
+        self.refresh_library()?;
+        Ok(self.all_snapshots())
+    }
+}
+
 impl<E: EngineFacade + Clone> Message<SetPowerSource> for BridgeActor<E> {
     type Reply = messages::SetPowerSourceReply;
 
@@ -2020,6 +2078,21 @@ impl<E: EngineFacade + Clone> Message<InitialFrameReady> for BridgeActor<E> {
             self.state.pending_battery_pause_after_initial_frame = false;
             self.apply_power_policy().await?;
         }
+        Ok(self.all_snapshots())
+    }
+}
+
+impl<E: EngineFacade + Clone> Message<SetAssetsDir> for BridgeActor<E> {
+    type Reply = messages::SetAssetsDirReply;
+
+    async fn handle(
+        &mut self,
+        msg: SetAssetsDir,
+        _ctx: &mut Context<Self, Self::Reply>,
+    ) -> Self::Reply {
+        self.paths.assets_dir = Some(PathBuf::from(&msg.dir));
+        self.state.app_config.general.assets_dir = Some(msg.dir);
+        self.persist_app_config()?;
         Ok(self.all_snapshots())
     }
 }

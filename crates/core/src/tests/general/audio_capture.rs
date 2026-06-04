@@ -73,6 +73,23 @@ pub fn case_audio_response_resampler_preserves_12khz_mono() {
 }
 
 #[test]
+pub fn case_audio_response_resampler_sanitizes_12khz_mono() {
+    let mut resampler = AudioResponseResampler::new();
+    let mut input = vec![0.0f32; 200];
+    input[0] = f32::NAN;
+    input[1] = f32::INFINITY;
+    input[2] = f32::NEG_INFINITY;
+    input[3] = 2.0;
+    input[4] = -2.0;
+    let input = MonoPcmF32::borrowed(12_000, &input).expect("valid mono input");
+
+    let blocks = resampler.push(&input);
+
+    assert_eq!(blocks.len(), 1);
+    assert_eq!(&blocks[0].samples()[..5], &[0.0, 0.0, 0.0, 1.0, -1.0]);
+}
+
+#[test]
 pub fn case_audio_response_resampler_converts_48khz_mono_to_12khz() {
     let mut resampler = AudioResponseResampler::new();
     #[allow(clippy::cast_precision_loss)]

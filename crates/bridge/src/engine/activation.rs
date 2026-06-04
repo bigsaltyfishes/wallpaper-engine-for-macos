@@ -66,8 +66,9 @@ impl ActivationInputs<'_> {
                 continue;
             }
 
-            let scene =
+            let mut scene =
                 self.scene_for_monitor(display.clone(), wallpaper_id, wallpaper, monitor)?;
+            scene.horizontal_flip = self.monitor_horizontal_flip(monitor);
             used_displays.push(display);
             scenes.push(scene);
         }
@@ -123,6 +124,7 @@ impl ActivationInputs<'_> {
             scene.display = display.clone();
             scene.scaling_mode = settings.parse_scaling_mode();
             scene.scaling_factor = settings.scaling_factor;
+            scene.horizontal_flip = settings.horizontal_flip;
             scene.fps = scene
                 .display
                 .refresh_rate_hz
@@ -158,6 +160,14 @@ impl ActivationInputs<'_> {
             paths: self.paths,
             force_shader_refresh: self.force_shader_refresh,
         })
+    }
+
+    fn monitor_horizontal_flip(&self, monitor: &MonitorCfg) -> bool {
+        self.app_config
+            .monitor_settings
+            .iter()
+            .find(|settings| settings.selector == monitor.selector)
+            .is_some_and(|settings| settings.horizontal_flip)
     }
 }
 
@@ -251,20 +261,21 @@ impl SceneDescBuilderExt for SceneDescBuilder {
             .map(crate::config::wallpaper::MonitorRender::parse_scaling_mode)
             .unwrap_or_default();
         let scaling_factor = render_override.map_or(1.0, |render| render.scaling_factor);
-        let property_override_json = if !context.wallpaper.r#type.eq_ignore_ascii_case("scene")
-            || context.wallpaper.property_overrides.is_empty()
-        {
-            None
-        } else {
-            let overrides = context
-                .wallpaper
-                .property_overrides
-                .iter()
-                .map(|(id, value)| (id.clone(), PropertyValue::from_json(value)))
-                .collect::<BTreeMap<_, _>>();
+        let supports_property_overrides = context.wallpaper.r#type.eq_ignore_ascii_case("scene")
+            || context.wallpaper.r#type.eq_ignore_ascii_case("web");
+        let property_override_json =
+            if !supports_property_overrides || context.wallpaper.property_overrides.is_empty() {
+                None
+            } else {
+                let overrides = context
+                    .wallpaper
+                    .property_overrides
+                    .iter()
+                    .map(|(id, value)| (id.clone(), PropertyValue::from_json(value)))
+                    .collect::<BTreeMap<_, _>>();
 
-            Some(overrides.to_override_json())
-        };
+                Some(overrides.to_override_json())
+            };
         let mut builder = SceneTemplate::builder(project_json.to_string_lossy())
             .assets_path(assets_path.to_string_lossy())
             .fps(fps.max(1).min(max_fps))

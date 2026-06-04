@@ -143,6 +143,11 @@ final class BridgeStore {
         apply(bundle)
     }
 
+    func setDisplayHorizontalFlipAsync(displayId: String, enabled: Bool) async throws {
+        let bundle = try await bridge.setDisplayHorizontalFlip(displayId: displayId, enabled: enabled)
+        apply(bundle)
+    }
+
     func setMirrorTargetAsync(displayId: String, targetDisplayId: String) async throws {
         let bundle = try await bridge.setMirrorTarget(displayId: displayId, targetDisplayId: targetDisplayId)
         apply(bundle)
@@ -180,6 +185,16 @@ final class BridgeStore {
 
     func setPauseOnBatteryPowerAsync(enabled: Bool) async throws {
         let bundle = try await bridge.setPauseOnBatteryPower(enabled: enabled)
+        apply(bundle)
+    }
+
+    func setWorkshopDirAsync(dir: String) async throws {
+        let bundle = try await bridge.setWorkshopDir(dir: dir)
+        apply(bundle)
+    }
+
+    func setAssetsDirAsync(dir: String) async throws {
+        let bundle = try await bridge.setAssetsDir(dir: dir)
         apply(bundle)
     }
 
@@ -280,7 +295,9 @@ final class BridgeStore {
                         activeFile: "",
                         activeFileSizeBytes: 0
                     )
-                )
+                ),
+                workshopDir: "",
+                assetsDir: ""
             )
         )
     }

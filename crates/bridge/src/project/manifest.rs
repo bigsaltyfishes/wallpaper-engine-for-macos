@@ -88,7 +88,8 @@ impl ProjectModel {
                         continue;
                     };
 
-                    let kind = match object.get("type").and_then(Value::as_str).unwrap_or("") {
+                    let raw_kind = object.get("type").and_then(Value::as_str).unwrap_or("");
+                    let kind = match raw_kind {
                         raw if raw.eq_ignore_ascii_case("slider") => PropertyKind::Slider,
                         raw if raw.eq_ignore_ascii_case("combo") => PropertyKind::Combo,
                         raw if raw.eq_ignore_ascii_case("bool") => PropertyKind::Bool,
@@ -98,10 +99,12 @@ impl ProjectModel {
                         raw if raw.eq_ignore_ascii_case("group") => PropertyKind::Group,
                         raw if raw.eq_ignore_ascii_case("directory")
                             || raw.eq_ignore_ascii_case("scenetexture")
-                            || raw.eq_ignore_ascii_case("texture") =>
+                            || raw.eq_ignore_ascii_case("texture")
+                            || raw.eq_ignore_ascii_case("file") =>
                         {
                             PropertyKind::Directory
                         }
+                        "" if object.get("text").is_some() => PropertyKind::Text,
                         raw => PropertyKind::Unknown(raw.to_string()),
                     };
                     let metadata = match &kind {
@@ -413,5 +416,26 @@ mod tests {
             m.properties[0].default_value,
             PropertyValue::String(String::new())
         );
+    }
+
+    #[test]
+    fn web_file_properties_are_path_selectors() {
+        let m = ProjectModel::parse(
+            "1551961057",
+            r#"{
+            "type":"web","general":{"properties":{
+                "screenFile":{"type":"file","order":1,"text":"屏幕上的图片"},
+                "tip":{"order":2,"text":"手机上的文字"}
+            }}
+        }"#,
+        )
+        .unwrap();
+
+        assert_eq!(m.properties[0].kind, PropertyKind::Directory);
+        assert_eq!(
+            m.properties[0].default_value,
+            PropertyValue::String(String::new())
+        );
+        assert_eq!(m.properties[1].kind, PropertyKind::Text);
     }
 }

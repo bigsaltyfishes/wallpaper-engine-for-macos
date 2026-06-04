@@ -50,6 +50,23 @@
         }
       }
     },
+    "Assets Directory" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Assets Directory"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "资源目录"
+          }
+        }
+      }
+    },
     "Apply" : {
       "localizations" : {
         "en" : {
@@ -130,6 +147,23 @@
         }
       }
     },
+    "Browse..." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Browse..."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "浏览…"
+          }
+        }
+      }
+    },
     "Cancel" : {
       "localizations" : {
         "en" : {
@@ -176,6 +210,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在检查更新…"
+          }
+        }
+      }
+    },
+    "Choose Image" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose Image"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择图片"
           }
         }
       }
@@ -261,6 +312,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "关闭"
+          }
+        }
+      }
+    },
+    "Color" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Color"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "颜色"
           }
         }
       }
@@ -442,6 +510,23 @@
         }
       }
     },
+    "Display settings could not be loaded." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Display settings could not be loaded."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法加载显示器设置。"
+          }
+        }
+      }
+    },
     "Eject" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -539,6 +624,40 @@
         }
       }
     },
+    "Folder containing shared assets for scene wallpapers." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Folder containing shared assets for scene wallpapers."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "包含场景壁纸共享资源的文件夹。"
+          }
+        }
+      }
+    },
+    "Folder containing wallpaper subdirectories with project.json files." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Folder containing wallpaper subdirectories with project.json files."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "包含带有 project.json 文件的壁纸子目录的文件夹。"
+          }
+        }
+      }
+    },
     "General Configuration" : {
       "localizations" : {
         "en" : {
@@ -551,6 +670,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "通用配置"
+          }
+        }
+      }
+    },
+    "Group" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Group"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分组"
+          }
+        }
+      }
+    },
+    "Horizontal Flip" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Horizontal Flip"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "左右反转"
           }
         }
       }
@@ -715,6 +868,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "镜像"
+          }
+        }
+      }
+    },
+    "Mirrored %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mirrored %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "镜像自 %@"
           }
         }
       }
@@ -1293,6 +1463,23 @@
         }
       }
     },
+    "Unsupported property type." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unsupported property type."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不支持的属性类型。"
+          }
+        }
+      }
+    },
     "Unknown" : {
       "localizations" : {
         "en" : {
@@ -1393,6 +1580,23 @@
         }
       }
     },
+    "Version" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Version"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "版本"
+          }
+        }
+      }
+    },
     "Video" : {
       "localizations" : {
         "en" : {
@@ -1474,6 +1678,23 @@
         }
       }
     },
+    "Wallpaper Options" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Options"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "壁纸选项"
+          }
+        }
+      }
+    },
     "Wallpaper Properties" : {
       "localizations" : {
         "en" : {
@@ -1490,6 +1711,23 @@
         }
       }
     },
+    "Wallpaper settings could not be loaded." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper settings could not be loaded."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法加载壁纸设置。"
+          }
+        }
+      }
+    },
     "Webpage" : {
       "localizations" : {
         "en" : {
@@ -1502,6 +1740,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "网页"
+          }
+        }
+      }
+    },
+    "Workshop Directory" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Workshop Directory"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "创意工坊目录"
           }
         }
       }
