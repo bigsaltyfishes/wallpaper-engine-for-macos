@@ -16,13 +16,6 @@ use objc2_quartz_core::CAMetalLayer;
 
 use crate::{DisplayDesc, EngineError};
 
-fn web_error_to_engine(error: wallpaper_web::WebError) -> EngineError {
-    match error {
-        wallpaper_web::WebError::InvalidInput(message) => EngineError::InvalidInput(message),
-        wallpaper_web::WebError::Platform(message) => EngineError::Platform(message),
-    }
-}
-
 define_class!(
     // SAFETY: The subclass only overrides frame constraint behavior and does
     // not add ivars or custom memory management.
@@ -479,7 +472,10 @@ impl WallpaperWindow {
         let web_view_ptr = MainThread::dispatch(move || unsafe {
             handle_ref
                 .install_web_view(&html_path, &read_access_root, initial_properties.as_ref())
-                .map_err(web_error_to_engine)
+                .map_err(|e| match e {
+                    wallpaper_web::WebError::InvalidInput(m) => EngineError::InvalidInput(m),
+                    wallpaper_web::WebError::Platform(m) => EngineError::Platform(m),
+                })
         })?;
 
         let new_content_view =
@@ -502,7 +498,10 @@ impl WallpaperWindow {
 
         let content_view = handle.content_view.as_ptr().cast::<std::ffi::c_void>();
         unsafe { wallpaper_web::AudioDispatcher::retain(wallpaper_web::ObjcPtr::new(content_view)) }
-            .map_err(web_error_to_engine)
+            .map_err(|e| match e {
+                wallpaper_web::WebError::InvalidInput(m) => EngineError::InvalidInput(m),
+                wallpaper_web::WebError::Platform(m) => EngineError::Platform(m),
+            })
     }
 
     pub(crate) fn web_property_dispatcher(
@@ -518,7 +517,10 @@ impl WallpaperWindow {
         unsafe {
             wallpaper_web::PropertyDispatcher::retain(wallpaper_web::ObjcPtr::new(content_view))
         }
-        .map_err(web_error_to_engine)
+        .map_err(|e| match e {
+            wallpaper_web::WebError::InvalidInput(m) => EngineError::InvalidInput(m),
+            wallpaper_web::WebError::Platform(m) => EngineError::Platform(m),
+        })
     }
 
     /// Returns whether this Rust-owned window still has a native handle.

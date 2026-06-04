@@ -164,7 +164,7 @@ impl SceneRuntime {
                 std::path::Path::new(&desc.scene_path),
                 descriptor_state.property_override_json.as_deref(),
             )
-            .map_err(web_error_to_engine)?;
+            .map_err(|e| EngineError::Platform(format!("{e}")))?;
             let mut window = WallpaperWindow::builder(desc.display.clone()).open()?;
             window.install_web_view(&web_entry, Some(&web_properties))?;
             let web_runtime = wallpaper_web::Runtime::start(
@@ -236,7 +236,7 @@ impl SceneRuntime {
             RuntimeContent::Scene(renderer) => renderer.set_scaling_mode(mode)?,
             RuntimeContent::Web(runtime) => runtime
                 .set_scaling_mode(mode.to_string().as_str())
-                .map_err(web_error_to_engine)?,
+                .map_err(|e| EngineError::Platform(format!("{e}")))?,
         }
         self.scaling_mode = mode;
         self.desc.scaling_mode = mode;
@@ -248,7 +248,7 @@ impl SceneRuntime {
             RuntimeContent::Scene(renderer) => renderer.set_scaling_factor(factor)?,
             RuntimeContent::Web(runtime) => runtime
                 .set_scaling_factor(factor)
-                .map_err(web_error_to_engine)?,
+                .map_err(|e| EngineError::Platform(format!("{e}")))?,
         }
         self.scaling_factor = factor;
         self.desc.scaling_factor = factor;
@@ -259,7 +259,7 @@ impl SceneRuntime {
         match &mut self.content {
             RuntimeContent::Scene(renderer) => renderer.set_target_fps(fps)?,
             RuntimeContent::Web(runtime) => {
-                runtime.set_fps(fps).map_err(web_error_to_engine)?;
+                runtime.set_fps(fps).map_err(|e| EngineError::Platform(format!("{e}")))?;
             }
         }
         self.desc.fps = fps;
@@ -557,10 +557,10 @@ impl SceneRuntime {
                     std::path::Path::new(&self.desc.scene_path),
                     flat_json.as_deref(),
                 )
-                .map_err(web_error_to_engine)?;
+                .map_err(|e| EngineError::Platform(format!("{e}")))?;
                 runtime
                     .dispatch_properties(&properties)
-                    .map_err(web_error_to_engine)?;
+                    .map_err(|e| EngineError::Platform(format!("{e}")))?;
             }
         }
         self.property_override_json = flat_json;
@@ -616,33 +616,25 @@ impl SceneRuntime {
                         std::path::Path::new(&self.desc.scene_path),
                         descriptor_state.property_override_json.as_deref(),
                     )
-                    .map_err(web_error_to_engine)?;
+                    .map_err(|e| EngineError::Platform(format!("{e}")))?;
                     runtime
                         .dispatch_properties(&properties)
-                        .map_err(web_error_to_engine)?;
+                        .map_err(|e| EngineError::Platform(format!("{e}")))?;
                 }
                 runtime
                     .set_scaling_mode(self.desc.scaling_mode.to_string().as_str())
-                    .map_err(web_error_to_engine)?;
+                    .map_err(|e| EngineError::Platform(format!("{e}")))?;
                 runtime
                     .set_scaling_factor(self.desc.scaling_factor)
-                    .map_err(web_error_to_engine)?;
+                    .map_err(|e| EngineError::Platform(format!("{e}")))?;
                 runtime
                     .set_fps(self.desc.fps)
-                    .map_err(web_error_to_engine)?;
+                    .map_err(|e| EngineError::Platform(format!("{e}")))?;
             }
         }
         Ok(())
     }
 }
-
-fn web_error_to_engine(error: wallpaper_web::WebError) -> EngineError {
-    match error {
-        wallpaper_web::WebError::InvalidInput(message) => EngineError::InvalidInput(message),
-        wallpaper_web::WebError::Platform(message) => EngineError::Platform(message),
-    }
-}
-
 impl Drop for SceneRuntime {
     fn drop(&mut self) {
         let _ = self.close();
