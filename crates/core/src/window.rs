@@ -1,3 +1,5 @@
+use std::path::{Path, PathBuf};
+
 use objc2::{
     ClassType, MainThreadMarker, MainThreadOnly, Message, define_class, msg_send, rc::Retained,
     runtime::AnyObject,
@@ -445,6 +447,82 @@ impl WallpaperWindow {
         Ok(())
     }
 
+    /// Replaces the placeholder Metal view with a web content view and loads
+    /// a local HTML entry file.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the path cannot be represented for Foundation,
+    /// WebKit is unavailable, or the window has been closed.
+    pub fn install_web_view(
+        &mut self,
+        html_path: &Path,
+        initial_properties: Option<&wallpaper_web::Properties>,
+    ) -> Result<(), EngineError> {
+        let Some(handle) = self.handle.as_mut() else {
+            return Err(EngineError::Platform(
+                "wallpaper window is already closed".to_string(),
+            ));
+        };
+
+        let html_path = html_path.to_path_buf();
+        let read_access_root = PathBuf::from("/");
+        let initial_properties = initial_properties.cloned();
+        let handle_ref = handle.clone_for_main_thread();
+        let web_view_ptr = MainThread::dispatch(move || unsafe {
+            handle_ref
+                .install_web_view(&html_path, &read_access_root, initial_properties.as_ref())
+                .map_err(|e| match e {
+                    wallpaper_web::WebError::InvalidInput(m) => EngineError::InvalidInput(m),
+                    wallpaper_web::WebError::Platform(m) => EngineError::Platform(m),
+                })
+        })?;
+
+        let new_content_view =
+            MainThread::dispatch(move || unsafe { MainThread::retain_from_ptr(web_view_ptr) })?;
+        let old_content_view = std::mem::replace(&mut handle.content_view, new_content_view);
+        MainThread::dispatch(move || unsafe {
+            old_content_view.release();
+        });
+        Ok(())
+    }
+
+    pub(crate) fn web_audio_dispatcher(
+        &self,
+    ) -> Result<wallpaper_web::AudioDispatcher, EngineError> {
+        let Some(handle) = self.handle.as_ref() else {
+            return Err(EngineError::Platform(
+                "wallpaper window is already closed".to_string(),
+            ));
+        };
+
+        let content_view = handle.content_view.as_ptr().cast::<std::ffi::c_void>();
+        unsafe { wallpaper_web::AudioDispatcher::retain(wallpaper_web::ObjcPtr::new(content_view)) }
+            .map_err(|e| match e {
+                wallpaper_web::WebError::InvalidInput(m) => EngineError::InvalidInput(m),
+                wallpaper_web::WebError::Platform(m) => EngineError::Platform(m),
+            })
+    }
+
+    pub(crate) fn web_property_dispatcher(
+        &self,
+    ) -> Result<wallpaper_web::PropertyDispatcher, EngineError> {
+        let Some(handle) = self.handle.as_ref() else {
+            return Err(EngineError::Platform(
+                "wallpaper window is already closed".to_string(),
+            ));
+        };
+
+        let content_view = handle.content_view.as_ptr().cast::<std::ffi::c_void>();
+        unsafe {
+            wallpaper_web::PropertyDispatcher::retain(wallpaper_web::ObjcPtr::new(content_view))
+        }
+        .map_err(|e| match e {
+            wallpaper_web::WebError::InvalidInput(m) => EngineError::InvalidInput(m),
+            wallpaper_web::WebError::Platform(m) => EngineError::Platform(m),
+        })
+    }
+
     /// Returns whether this Rust-owned window still has a native handle.
     #[must_use]
     pub fn is_open(&self) -> bool {
@@ -852,6 +930,26 @@ impl WindowHandleRef {
 
         let ptr: *mut std::ffi::c_void = Retained::as_ptr(&new_layer).cast_mut().cast();
         Ok(SendPtr(ptr))
+    }
+
+    unsafe fn install_web_view(
+        self,
+        html_path: &Path,
+        read_access_root: &Path,
+        initial_properties: Option<&wallpaper_web::Properties>,
+    ) -> Result<SendPtr, wallpaper_web::WebError> {
+        debug_assert!(NSThread::isMainThread_class());
+
+        let web_view = unsafe {
+            wallpaper_web::install_web_view(
+                wallpaper_web::ObjcPtr::new(self.window.cast()),
+                wallpaper_web::ObjcPtr::new(self.content_view.cast()),
+                html_path,
+                read_access_root,
+                initial_properties,
+            )
+        }?;
+        Ok(SendPtr(web_view.as_ptr()))
     }
 }
 

@@ -13,6 +13,7 @@ struct AboutSection: View {
                 LabeledContent("App", value: appVersion)
                 LabeledContent("Bridge", value: store.settingsSnapshot.bridgeVersion)
                 LabeledContent("Core", value: store.settingsSnapshot.coreVersion)
+                LabeledContent("Web", value: store.settingsSnapshot.webVersion)
                 LabeledContent("Shader Pipeline", value: store.settingsSnapshot.shaderPipelineVersion)
                 LabeledContent("Git", value: gitCommitHash)
                 LabeledContent("Project URL") {

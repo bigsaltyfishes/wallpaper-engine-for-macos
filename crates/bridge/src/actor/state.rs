@@ -5,7 +5,7 @@ pub mod drafts {
 use std::collections::BTreeMap;
 
 use drafts::WallpaperOptionsDraft;
-use wallpaper_core::project::SceneDesc;
+use wallpaper_core::project::{SceneDesc, WallpaperProjectType};
 
 use crate::{
     api::{
@@ -150,8 +150,18 @@ impl BridgeActorState {
                     })
             })
             .unwrap_or_else(|| {
+                let type_str = self
+                    .project_models
+                    .get(wallpaper_id)
+                    .map(|model| match model.project_type {
+                        WallpaperProjectType::Scene => "scene",
+                        WallpaperProjectType::Video => "video",
+                        WallpaperProjectType::Web => "web",
+                        WallpaperProjectType::Unknown => "scene",
+                    })
+                    .unwrap_or("scene");
                 WallpaperOptionsDraft::from_committed_with_enabled_displays(
-                    WallpaperConfig::new_for(wallpaper_id, "scene"),
+                    WallpaperConfig::new_for(wallpaper_id, type_str),
                     self.enabled_selectors(wallpaper_id),
                 )
             }))
@@ -286,7 +296,19 @@ impl BridgeActorState {
                 .wallpaper_configs
                 .get(wallpaper_id)
                 .cloned()
-                .unwrap_or_else(|| WallpaperConfig::new_for(wallpaper_id, "scene"));
+                .unwrap_or_else(|| {
+                    let type_str = self
+                        .project_models
+                        .get(wallpaper_id)
+                        .map(|model| match model.project_type {
+                            WallpaperProjectType::Scene => "scene",
+                            WallpaperProjectType::Video => "video",
+                            WallpaperProjectType::Web => "web",
+                            WallpaperProjectType::Unknown => "scene",
+                        })
+                        .unwrap_or("scene");
+                    WallpaperConfig::new_for(wallpaper_id, type_str)
+                });
             let enabled_displays = self.enabled_selectors(wallpaper_id);
             self.wallpaper_drafts.insert(
                 wallpaper_id.to_string(),
