@@ -33,6 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         NSApp.setActivationPolicy(.accessory)
         logStartup("activation policy set to accessory")
         installStatusItem()
+        synchronizeStatusItem()
         installDisplayChangeObserver()
         logStartup("display change observer installed")
         redirectApplicationSettingsMenu()
@@ -78,6 +79,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showControlPanel(selection: .wallpaper)
+        return false
     }
 
     func menuWillOpen(_ menu: NSMenu) {
@@ -137,6 +143,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         menu.delegate = self
         item.menu = menu
         rebuildMenu(menu)
+    }
+
+    /// Work around an AppKit/SwiftUI timing issue: when launched via
+    /// LaunchServices (Finder double-click) in `.accessory` activation
+    /// policy, a status item created in `applicationDidFinishLaunching`
+    /// may be created correctly but never rendered because the SwiftUI
+    /// Scene phase hasn't stabilized yet. Deferring by one runloop turn
+    /// gives the Scene phase time to settle. Re-asserting the activation
+    /// policy afterwards forces AppKit to re-register accessory-mode
+    /// status items with the Window Server; rebuilding the menu alone
+    /// only mutates `NSMenu` items and does not touch the status item's
+    /// backing window, so it is insufficient by itself.
+    private func synchronizeStatusItem() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.statusItem != nil else { return }
+            // Re-assert the activation policy to force AppKit to
+            // re-register the accessory-mode status item with the
+            // Window Server after the SwiftUI Scene phase has settled.
+            NSApp.setActivationPolicy(.accessory)
+            self.rebuildMenu()
+        }
     }
 
     private func installDisplayChangeObserver() {
