@@ -15,22 +15,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private var shutdownComplete = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        logStartup("didFinishLaunching start")
         BridgeEnvironment.configureVulkanICDIfNeeded()
+        logStartup("vulkan icd configured")
         do {
             store = try BridgeStore()
             AppLog.store = store
             startupError = nil
             playbackSnapshotCurrent = false
+            logStartup("BridgeStore created")
         } catch {
+            logStartup("BridgeStore FAILED: \(error.localizedDescription)")
             startupError = error
             playbackSnapshotCurrent = false
         }
 
         NSApp.setActivationPolicy(.accessory)
+        logStartup("activation policy set to accessory")
         installStatusItem()
         installDisplayChangeObserver()
+        logStartup("display change observer installed")
         redirectApplicationSettingsMenu()
+        logStartup("settings menu redirect dispatched")
         bootstrapStore()
+        logStartup("bootstrap dispatched")
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -102,15 +110,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         NSApp.setActivationPolicy(.accessory)
     }
 
+    /// Emits a startup-diagnostic line straight to stderr so it is visible when
+    /// the app is launched from a terminal. Deliberately bypasses `AppLog`,
+    /// whose `guard let store` blind spot silently drops every message until
+    /// `BridgeStore` is constructed, and which otherwise writes only to the
+    /// Rust file channel rather than stderr.
+    private func logStartup(_ message: String) {
+        fputs("[WE] \(message)\n", stderr)
+    }
+
     private func installStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem = item
 
-        if let button = item.button {
-            button.image = NSImage(named: "TrayIcon")
+        let button = item.button
+        let trayIcon = NSImage(named: "TrayIcon")
+        if let button {
+            button.image = trayIcon
                 ?? NSImage(systemSymbolName: "play.rectangle", accessibilityDescription: "Wallpaper Engine")
             button.image?.isTemplate = true
         }
+
+        logStartup("statusItem installed: button=\(button != nil) trayIconAssetResolved=\(trayIcon != nil)")
 
         let menu = NSMenu()
         menu.delegate = self
@@ -274,7 +295,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     }
 
     private func bootstrapStore() {
+        logStartup("bootstrapAsync start")
         guard let store else {
+            logStartup("bootstrapAsync skipped: store is nil")
             return
         }
 
@@ -284,7 +307,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                 startupError = nil
                 lastError = nil
                 playbackSnapshotCurrent = true
+                logStartup("bootstrapAsync completed successfully")
             } catch {
+                logStartup("bootstrapAsync FAILED: \(error.localizedDescription)")
                 lastError = error
                 playbackSnapshotCurrent = false
             }
