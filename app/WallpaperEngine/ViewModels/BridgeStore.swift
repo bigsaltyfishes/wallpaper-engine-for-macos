@@ -183,6 +183,16 @@ final class BridgeStore {
         apply(bundle)
     }
 
+    func setWorkshopDirAsync(dir: String) async throws {
+        let bundle = try await bridge.setWorkshopDir(dir: dir)
+        apply(bundle)
+    }
+
+    func setAssetsDirAsync(dir: String) async throws {
+        let bundle = try await bridge.setAssetsDir(dir: dir)
+        apply(bundle)
+    }
+
     func applyWallpaperOptionsAsync(wallpaperId: String) async throws {
         let bundle = try await bridge.applyWallpaperOptions(wallpaperId: wallpaperId)
         apply(bundle)
@@ -280,7 +290,9 @@ final class BridgeStore {
                         activeFile: "",
                         activeFileSizeBytes: 0
                     )
-                )
+                ),
+                workshopDir: "",
+                assetsDir: ""
             )
         )
     }

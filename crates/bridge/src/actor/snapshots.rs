@@ -385,6 +385,8 @@ impl BridgeActorState {
                     bridge_log_status,
                 ),
             },
+            workshop_dir: paths.steam_workshop_root().to_string_lossy().into_owned(),
+            assets_dir: paths.assets_root().to_string_lossy().into_owned(),
         }
     }
 }
