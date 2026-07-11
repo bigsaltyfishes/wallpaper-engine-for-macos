@@ -1318,7 +1318,9 @@ impl<E: EngineFacade + Clone> Message<InjectWallpaperForTest> for BridgeActor<E>
             kind: msg.kind,
             supported: matches!(
                 msg.kind,
-                BridgeWallpaperKind::ProjectScene | BridgeWallpaperKind::Video
+                BridgeWallpaperKind::ProjectScene
+                    | BridgeWallpaperKind::Video
+                    | BridgeWallpaperKind::Webpage
             ),
             active: false,
             selected: false,

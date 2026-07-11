@@ -271,6 +271,7 @@ final class BridgeStore {
                 gitSha: "",
                 bridgeVersion: "",
                 coreVersion: "",
+                webVersion: "",
                 shaderPipelineVersion: "",
                 storage: BridgeStorageStatus(
                     shaderCacheSizeBytes: 0,

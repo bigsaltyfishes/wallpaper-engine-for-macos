@@ -251,20 +251,21 @@ impl SceneDescBuilderExt for SceneDescBuilder {
             .map(crate::config::wallpaper::MonitorRender::parse_scaling_mode)
             .unwrap_or_default();
         let scaling_factor = render_override.map_or(1.0, |render| render.scaling_factor);
-        let property_override_json = if !context.wallpaper.r#type.eq_ignore_ascii_case("scene")
-            || context.wallpaper.property_overrides.is_empty()
-        {
-            None
-        } else {
-            let overrides = context
-                .wallpaper
-                .property_overrides
-                .iter()
-                .map(|(id, value)| (id.clone(), PropertyValue::from_json(value)))
-                .collect::<BTreeMap<_, _>>();
+        let supports_property_overrides = context.wallpaper.r#type.eq_ignore_ascii_case("scene")
+            || context.wallpaper.r#type.eq_ignore_ascii_case("web");
+        let property_override_json =
+            if !supports_property_overrides || context.wallpaper.property_overrides.is_empty() {
+                None
+            } else {
+                let overrides = context
+                    .wallpaper
+                    .property_overrides
+                    .iter()
+                    .map(|(id, value)| (id.clone(), PropertyValue::from_json(value)))
+                    .collect::<BTreeMap<_, _>>();
 
-            Some(overrides.to_override_json())
-        };
+                Some(overrides.to_override_json())
+            };
         let mut builder = SceneTemplate::builder(project_json.to_string_lossy())
             .assets_path(assets_path.to_string_lossy())
             .fps(fps.max(1).min(max_fps))

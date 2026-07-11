@@ -33,7 +33,9 @@ impl WallpaperEntry {
             project_json_mtime: None,
             supported: matches!(
                 model.project_type,
-                WallpaperProjectType::Scene | WallpaperProjectType::Video
+                WallpaperProjectType::Scene
+                    | WallpaperProjectType::Video
+                    | WallpaperProjectType::Web
             ),
         }
     }
@@ -65,9 +67,9 @@ mod tests {
     }
 
     #[test]
-    fn web_is_unsupported() {
+    fn web_is_supported() {
         let entry = WallpaperEntry::from_model(&model(WallpaperProjectType::Web));
-        assert!(!entry.supported);
+        assert!(entry.supported);
     }
 
     #[test]
