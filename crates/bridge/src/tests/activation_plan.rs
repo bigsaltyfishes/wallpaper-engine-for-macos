@@ -254,6 +254,7 @@ fn mirror_scene_follows_source_wallpaper_with_monitor_overrides() {
             target_fps: 30,
             volume: 0.2,
             muted: true,
+            horizontal_flip: true,
         }],
         ..AppConfig::default()
     };
@@ -286,6 +287,7 @@ fn mirror_scene_follows_source_wallpaper_with_monitor_overrides() {
     assert_f32_close(f32::from(mirror.audio_volume), 0.2);
     assert!(!primary.audio_muted);
     assert!(mirror.audio_muted);
+    assert!(mirror.horizontal_flip);
     assert_eq!(
         mirror.scaling_mode,
         wallpaper_core::project::ScalingMode::Fill

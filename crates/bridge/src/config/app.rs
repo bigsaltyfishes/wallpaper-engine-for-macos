@@ -37,6 +37,10 @@ impl Default for AppConfig {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GeneralCfg {
     pub last_selected_wallpaper: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workshop_dir: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assets_dir: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -223,6 +227,8 @@ pub struct MonitorSettingsCfg {
     pub volume: f32,
     #[serde(default)]
     pub muted: bool,
+    #[serde(default)]
+    pub horizontal_flip: bool,
 }
 
 impl Default for MonitorSettingsCfg {
@@ -234,6 +240,7 @@ impl Default for MonitorSettingsCfg {
             target_fps: default_target_fps(),
             volume: default_monitor_volume(),
             muted: false,
+            horizontal_flip: false,
         }
     }
 }

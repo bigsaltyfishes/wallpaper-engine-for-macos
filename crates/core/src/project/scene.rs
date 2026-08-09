@@ -240,6 +240,8 @@ pub struct SceneDesc {
     pub scaling_mode: ScalingMode,
     /// Initial positive wallpaper scaling factor.
     pub scaling_factor: f64,
+    /// Whether the final presentation should be mirrored left-to-right.
+    pub horizontal_flip: bool,
     /// Whether the renderer should start in a paused state.
     pub paused: bool,
     /// Whether scene audio-response properties should be enabled.
@@ -272,6 +274,7 @@ impl SceneDesc {
             fps: 60,
             scaling_mode: ScalingMode::default(),
             scaling_factor: 1.0,
+            horizontal_flip: false,
             paused: false,
             audio_response_enabled: false,
             audio_volume: AudioVolume::try_from(1.0).unwrap(),
@@ -306,6 +309,7 @@ impl SceneDesc {
             fps,
             scaling_mode: ScalingMode::default(),
             scaling_factor: 1.0,
+            horizontal_flip: false,
             paused,
             audio_response_enabled: false,
             audio_volume: AudioVolume::try_from(1.0).unwrap(),
@@ -452,6 +456,7 @@ impl SceneDesc {
             && self.fps == other.fps
             && self.scaling_mode == other.scaling_mode
             && (self.scaling_factor - other.scaling_factor).abs() <= f64::EPSILON
+            && self.horizontal_flip == other.horizontal_flip
             && self.audio_response_enabled == other.audio_response_enabled
             && self.audio_volume == other.audio_volume
             && self.audio_muted == other.audio_muted
@@ -481,6 +486,8 @@ pub struct SceneTemplate {
     pub scaling_mode: ScalingMode,
     /// Initial positive wallpaper scaling factor.
     pub scaling_factor: f64,
+    /// Whether the final presentation should be mirrored left-to-right.
+    pub horizontal_flip: bool,
     /// Whether the renderer should start in a paused state.
     pub paused: bool,
     /// Whether scene audio-response properties should be enabled.
@@ -512,6 +519,7 @@ impl SceneTemplate {
             fps: 60,
             scaling_mode: ScalingMode::default(),
             scaling_factor: 1.0,
+            horizontal_flip: false,
             paused: false,
             audio_response_enabled: false,
             audio_volume: AudioVolume::try_from(1.0).unwrap(),
@@ -531,6 +539,7 @@ impl SceneTemplate {
             fps: scene.fps,
             scaling_mode: scene.scaling_mode,
             scaling_factor: scene.scaling_factor,
+            horizontal_flip: scene.horizontal_flip,
             paused: scene.paused,
             audio_response_enabled: scene.audio_response_enabled,
             audio_volume: scene.audio_volume,
@@ -551,6 +560,7 @@ impl SceneTemplate {
             fps: self.fps,
             scaling_mode: self.scaling_mode,
             scaling_factor: self.scaling_factor,
+            horizontal_flip: self.horizontal_flip,
             paused: self.paused,
             audio_response_enabled: self.audio_response_enabled,
             audio_volume: self.audio_volume,
@@ -595,6 +605,7 @@ pub struct SceneTemplateBuilder {
     fps: u32,
     scaling_mode: ScalingMode,
     scaling_factor: f64,
+    horizontal_flip: bool,
     paused: bool,
     audio_response_enabled: bool,
     audio_volume: AudioVolume,
@@ -630,6 +641,13 @@ impl SceneTemplateBuilder {
     #[must_use]
     pub fn scaling_factor(mut self, scaling_factor: f64) -> Self {
         self.scaling_factor = scaling_factor;
+        self
+    }
+
+    /// Sets whether final presentation should be mirrored left-to-right.
+    #[must_use]
+    pub fn horizontal_flip(mut self, enabled: bool) -> Self {
+        self.horizontal_flip = enabled;
         self
     }
 
@@ -694,6 +712,7 @@ impl SceneTemplateBuilder {
             fps: self.fps,
             scaling_mode: self.scaling_mode,
             scaling_factor: self.scaling_factor,
+            horizontal_flip: self.horizontal_flip,
             paused: self.paused,
             audio_response_enabled: self.audio_response_enabled,
             audio_volume: self.audio_volume,
@@ -772,6 +791,7 @@ pub struct SceneDescBuilder {
     fps: u32,
     scaling_mode: ScalingMode,
     scaling_factor: f64,
+    horizontal_flip: bool,
     paused: bool,
     audio_response_enabled: bool,
     audio_volume: AudioVolume,
@@ -807,6 +827,13 @@ impl SceneDescBuilder {
     #[must_use]
     pub fn scaling_factor(mut self, scaling_factor: f64) -> Self {
         self.scaling_factor = scaling_factor;
+        self
+    }
+
+    /// Sets whether final presentation should be mirrored left-to-right.
+    #[must_use]
+    pub fn horizontal_flip(mut self, enabled: bool) -> Self {
+        self.horizontal_flip = enabled;
         self
     }
 
@@ -893,6 +920,7 @@ impl SceneDescBuilder {
             fps: self.fps,
             scaling_mode: self.scaling_mode,
             scaling_factor: self.scaling_factor,
+            horizontal_flip: self.horizontal_flip,
             paused: self.paused,
             audio_response_enabled: self.audio_response_enabled,
             audio_volume: self.audio_volume,

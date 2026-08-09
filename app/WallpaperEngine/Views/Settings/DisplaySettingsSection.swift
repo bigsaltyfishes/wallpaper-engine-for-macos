@@ -35,6 +35,18 @@ struct DisplaySettingsSection: View {
                     .pickerStyle(.menu)
                     .disabled(isPrimary || displaySettingsInProgress)
 
+                    Toggle("Horizontal Flip", isOn: Binding {
+                        display.horizontalFlip
+                    } set: { enabled in
+                        performAsyncBridgeAction {
+                            try await store.setDisplayHorizontalFlipAsync(
+                                displayId: display.displayId,
+                                enabled: enabled
+                            )
+                        }
+                    })
+                    .disabled(displaySettingsInProgress)
+
                     if !isPrimary && display.mode == .mirror {
                         Picker(
                             "Mirror Target",

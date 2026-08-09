@@ -23,6 +23,7 @@
 - [x] 使用 FFmpeg 和 Apple VideoToolBox 实现的音频和视频管线
     - [x] 音频解码硬件加速
     - [x] 视频纹理
+    - [x] 允许左右翻转壁纸，适应macOS图标居右
 - [x] 参考 linux-wallpaperengine 实现的脚本引擎
     - [x] 部分支持 SceneScript
 - [x] 使用 Rust 完全重新实现的着色器管线，具有更好的兼容性和更快的代码生成速度
@@ -32,17 +33,17 @@
 
 ## 使用教程
 
-首先你需要有一份正版的 Wallpaper Engine 副本，本程序需要使用原版 Wallpaper Engine 的资源，程序不认除了 Steam 以外的安装路径。
+### 1.获取壁纸和Assets
 
-### 1. 安装原版 Wallpaper Engine
+#### 方法一：从Windows版本中复制
 
-1.1 安装 Steam 并登录
+打开Windows版本的Wallpaper Engine，随便找一个壁纸，右键，在资源管理器中显示，返回到上一层目录（或者直接前往```Steam游戏安装目录\workshop\content\431960```(下载的)或者```Steam游戏安装目录\common\wallpaper_engine\projects\myprojects```(自制的)），将里面的所有文件夹复制（或者只复制自己想要的壁纸）到macOS上面的任意目录
 
-这一步是为了保证你能通过 Steam 订阅创意工坊内容，并自动下载和更新。直接去 Steam 官网下载安装 macOS 版本的 Steam 即可
+再复制```Steam游戏安装目录\common\wallpaper_engine\assets```中的内容，到另一个目录（不要和壁纸放一起）
 
-1.2 安装 steamcmd
+#### 方法二：使用SteamCMD下载
 
-这一步是为了绕过 Steam 系统检测安装 Wallpaper Engine，你有两种方式安装
+**安装 SteamCMD**
 
 - 使用 [Homebrew](https://brew.sh/zh-cn/) 安装
 
@@ -61,9 +62,7 @@ echo "export PATH=$PATH:$HOME/Steam" >> ~/.zshrc
 source ~/.zshrc
 ```
 
-1.3 安装 Wallpaper Engine
-
-1.3.1 打开 SteamCMD 并登录
+**打开 SteamCMD 并登录**
 
 ```shell
 > steamcmd
@@ -99,6 +98,9 @@ Steam> app_update 431960 validate
 ### 3. 使用
 
 #### 3.1 设置壁纸
+
+如果你是采用的方法一获取的壁纸和Assets，请前往设置调整壁纸和Assets目录
+如果采用的是方法二则可以忽略（因为这是默认值）
 
 如果你只是在主显示器上用，那就是开箱即用的，直接去壁纸页面选择壁纸、在显示器页面中展开`Primary`显示器的设置，点击启用，然后应用即可。副屏需要你在设置页面中启用显示器才能设置壁纸。考虑到 MacBook Air 没有散热，不建议 MacBook Air 多屏启用场景类型壁纸。
 

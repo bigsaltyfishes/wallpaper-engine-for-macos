@@ -32,6 +32,45 @@ struct ProgramSettingsSection: View {
             }
             .disabled(!store.settingsSnapshot.launchAtLoginAvailable || bridgeActionInProgress)
 
+            LabeledContent {
+                HStack(spacing: 8) {
+                    Text(store.settingsSnapshot.workshopDir)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: 200, alignment: .leading)
+                    Button("Browse...") {
+                        browseWorkshopDir()
+                    }
+                    .disabled(bridgeActionInProgress)
+                }
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Workshop Directory")
+                    Text("Folder containing wallpaper subdirectories with project.json files.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            LabeledContent {
+                HStack(spacing: 8) {
+                    Text(store.settingsSnapshot.assetsDir)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: 200, alignment: .leading)
+                    Button("Browse...") {
+                        browseAssetsDir()
+                    }
+                    .disabled(bridgeActionInProgress)
+                }
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Assets Directory")
+                    Text("Folder containing shared assets for scene wallpapers.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
 
             LabeledContent {
                 Button("Clear") {
@@ -155,6 +194,38 @@ struct ProgramSettingsSection: View {
             } catch {
                 updateStatus = previousStatus == .checking ? .upToDate : previousStatus
                 presentedError = BridgeErrorAlert(error: error)
+            }
+        }
+    }
+
+    private func browseWorkshopDir() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.message = "Select the wallpaper workshop directory"
+        panel.prompt = "Select"
+
+        if panel.runModal() == .OK {
+            guard let url = panel.url else { return }
+            performAsyncBridgeAction {
+                try await store.setWorkshopDirAsync(dir: url.path())
+            }
+        }
+    }
+
+    private func browseAssetsDir() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.message = "Select the assets directory"
+        panel.prompt = "Select"
+
+        if panel.runModal() == .OK {
+            guard let url = panel.url else { return }
+            performAsyncBridgeAction {
+                try await store.setAssetsDirAsync(dir: url.path())
             }
         }
     }

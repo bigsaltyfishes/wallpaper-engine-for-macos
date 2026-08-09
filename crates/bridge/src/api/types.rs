@@ -179,6 +179,7 @@ pub struct BridgeDisplaySettingsRow {
     pub max_fps: u32,
     pub muted: bool,
     pub volume: f32,
+    pub horizontal_flip: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -215,6 +216,8 @@ pub struct BridgeSettingsSnapshot {
     pub core_version: String,
     pub shader_pipeline_version: String,
     pub storage: BridgeStorageStatus,
+    pub workshop_dir: String,
+    pub assets_dir: String,
 }
 
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]

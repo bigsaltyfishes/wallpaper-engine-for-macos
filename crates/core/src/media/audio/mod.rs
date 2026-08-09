@@ -191,7 +191,8 @@ impl AudioResponseResampler {
     #[must_use]
     pub fn push(&mut self, frames: &MonoPcmF32<'_>) -> Vec<MonoPcmF32<'static>> {
         if frames.sample_rate() == Self::TARGET_SAMPLE_RATE {
-            self.pending_mono.extend_from_slice(frames.samples());
+            self.pending_mono
+                .extend(frames.samples().iter().copied().map(Self::sanitize_sample));
         } else {
             self.append_resampled(frames.sample_rate(), frames.samples());
         }
@@ -222,7 +223,7 @@ impl AudioResponseResampler {
         if let Some(previous) = self.previous_mono {
             extended.push(previous);
         }
-        extended.extend_from_slice(mono);
+        extended.extend(mono.iter().copied().map(Self::sanitize_sample));
 
         while self.source_position + 1.0 < extended.len() as f64 {
             let index = self.source_position.floor() as usize;
@@ -237,6 +238,14 @@ impl AudioResponseResampler {
         if !extended.is_empty() {
             self.previous_mono = extended.last().copied();
             self.source_position = (self.source_position - (extended.len() - 1) as f64).max(0.0);
+        }
+    }
+
+    fn sanitize_sample(sample: f32) -> f32 {
+        if sample.is_finite() {
+            sample.clamp(-1.0, 1.0)
+        } else {
+            0.0
         }
     }
 

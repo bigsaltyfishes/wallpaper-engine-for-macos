@@ -3,10 +3,12 @@ members = [
     "crates/core",
     "crates/bridge",
     "crates/shader",
+    "crates/web",
 ]
 resolver = "2"
 
 [workspace.package]
+version = "0.2.0"
 edition = "2024"
 license = "GPL-2.0-only"
 
