@@ -98,6 +98,7 @@ impl BridgeActorState {
         self.pending_battery_pause_after_initial_frame = source
             == crate::power::PowerSource::Battery
             && self.app_config.power.pause_on_battery_power
+            && self.playback_state == crate::api::BridgePlaybackState::Playing
             && !self.initial_frame_ready;
     }
 

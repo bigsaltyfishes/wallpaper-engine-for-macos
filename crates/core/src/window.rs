@@ -1,3 +1,8 @@
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
+
 use objc2::{
     ClassType, MainThreadMarker, MainThreadOnly, Message, define_class, msg_send, rc::Retained,
     runtime::AnyObject,
@@ -91,6 +96,7 @@ impl Default for PlaceholderStyle {
 pub struct WallpaperWindow {
     display: DisplayDesc,
     handle: Option<WindowHandle>,
+    reveal_generation: Arc<AtomicU64>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -400,16 +406,65 @@ impl WallpaperWindow {
         WallpaperWindowBuilder {
             display,
             style: PlaceholderStyle::default(),
+            visible: true,
         }
     }
 
     /// Closes the native window if it is still open.
     pub fn close(&mut self) {
+        self.reveal_generation.fetch_add(1, Ordering::AcqRel);
         if let Some(handle) = self.handle.take() {
             MainThread::dispatch(move || unsafe {
                 handle.close_on_main();
             });
         }
+    }
+
+    #[allow(clippy::single_call_fn)]
+    pub(crate) fn hide(&self) {
+        self.reveal_generation.fetch_add(1, Ordering::AcqRel);
+        let Some(handle) = self.handle.as_ref() else {
+            return;
+        };
+        let handle = handle.clone_for_main_thread();
+        MainThread::dispatch(move || unsafe {
+            handle.order_out();
+        });
+    }
+
+    /// Reveals the window before forwarding the renderer's first-frame event.
+    pub(crate) fn reveal_on_first_frame(
+        &self,
+        callback: Arc<dyn Fn() + Send + Sync>,
+    ) -> Arc<dyn Fn() + Send + Sync> {
+        let generation = self
+            .reveal_generation
+            .fetch_add(1, Ordering::AcqRel)
+            .wrapping_add(1);
+        let pending = PendingWindowReveal {
+            handle: self
+                .handle
+                .as_ref()
+                .map(WindowHandle::clone_for_main_thread),
+            current_generation: self.reveal_generation.clone(),
+            generation,
+        };
+        Arc::new(move || {
+            let pending = pending.clone();
+            log::debug!("[wallpaper-core window] first-frame callback received");
+            let revealed = MainThread::dispatch(move || {
+                let Some(handle) = pending.into_current_handle() else {
+                    log::debug!("[wallpaper-core window] first-frame reveal invalidated");
+                    return false;
+                };
+                unsafe { handle.order_front() };
+                log::debug!("[wallpaper-core window] first-frame reveal completed");
+                true
+            });
+            if revealed {
+                callback();
+            }
+        })
     }
 
     /// Updates the native window, content view, and Metal layer to match
@@ -561,6 +616,7 @@ impl Drop for WallpaperWindow {
 pub struct WallpaperWindowBuilder {
     display: DisplayDesc,
     style: PlaceholderStyle,
+    visible: bool,
 }
 
 impl WallpaperWindowBuilder {
@@ -568,6 +624,13 @@ impl WallpaperWindowBuilder {
     #[must_use]
     pub fn placeholder_style(mut self, style: PlaceholderStyle) -> Self {
         self.style = style;
+        self
+    }
+
+    /// Keeps the window hidden until the renderer explicitly reveals it.
+    #[must_use]
+    pub fn hidden_until_first_frame(mut self) -> Self {
+        self.visible = false;
         self
     }
 
@@ -674,10 +737,13 @@ impl WallpaperWindowBuilder {
                     }
                 };
 
-                window.orderFrontRegardless();
+                if self.visible {
+                    window.orderFrontRegardless();
+                }
 
                 Ok(WallpaperWindow {
                     display: self.display,
+                    reveal_generation: Arc::new(AtomicU64::new(0)),
                     handle: Some(WindowHandle {
                         window: window_handle,
                         content_view: content_view_handle,
@@ -725,6 +791,9 @@ struct WindowHandle {
 }
 
 impl WindowHandle {
+    // Clippy counts only the function-pointer use in Option::map, overlooking
+    // the method calls in the synchronous window operations above.
+    #[allow(clippy::single_call_fn)]
     fn clone_for_main_thread(&self) -> WindowHandleRef {
         WindowHandleRef {
             window: self.window.as_ptr(),
@@ -746,19 +815,56 @@ impl WindowHandle {
     }
 }
 
+#[derive(Clone, Copy)]
 struct WindowHandleRef {
     window: *mut AnyObject,
     content_view: *mut AnyObject,
     metal_layer: *mut AnyObject,
 }
 
+#[derive(Clone)]
+struct PendingWindowReveal {
+    handle: Option<WindowHandleRef>,
+    current_generation: Arc<AtomicU64>,
+    generation: u64,
+}
+
+impl PendingWindowReveal {
+    fn into_current_handle(self) -> Option<WindowHandleRef> {
+        // Check on the main thread, after dispatch: hide/close may invalidate
+        // the callback while it is waiting for the main queue. A close also
+        // releases the borrowed pointers, so they must not be touched first.
+        if self.current_generation.load(Ordering::Acquire) != self.generation {
+            return None;
+        }
+        self.handle
+    }
+}
+
 // SAFETY: These raw pointers are borrowed from an open `WallpaperWindow` and
 // are only used inside synchronous `run_on_main_sync` operations. Safe Rust
 // borrowing prevents the owner from being closed or dropped while the borrowed
-// pointers are in flight.
+// pointers are in flight. Deferred first-frame reveals additionally validate
+// their generation on the main thread before accessing the pointers.
 unsafe impl Send for WindowHandleRef {}
+// SAFETY: The reference is immutable and Objective-C access is dispatched to
+// the main thread before any message is sent through these pointers.
+unsafe impl Sync for WindowHandleRef {}
 
 impl WindowHandleRef {
+    #[allow(clippy::single_call_fn)]
+    unsafe fn order_out(self) {
+        debug_assert!(NSThread::isMainThread_class());
+        let window = unsafe { &*(self.window.cast::<NSWindow>()) };
+        window.orderOut(None);
+    }
+
+    unsafe fn order_front(self) {
+        debug_assert!(NSThread::isMainThread_class());
+        let window = unsafe { &*(self.window.cast::<NSWindow>()) };
+        window.orderFrontRegardless();
+    }
+
     #[cfg(test)]
     unsafe fn native_state(self) -> WallpaperWindowNativeState {
         debug_assert!(NSThread::isMainThread_class());
@@ -939,10 +1045,61 @@ unsafe impl Send for MainThread {}
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, atomic::AtomicU64};
+
     use super::{
         MouseButtonEdges, MouseButtonState, MouseButtonTracker, MouseButtons,
-        NormalizedMousePosition,
+        NormalizedMousePosition, PendingWindowReveal, WallpaperWindow, WindowHandleRef,
     };
+
+    // Only the generation/lifetime decision is exercised here. These pointer
+    // tokens are never sent to AppKit or dereferenced by the tests.
+    fn queued_reveal() -> (WallpaperWindow, PendingWindowReveal) {
+        let generation = Arc::new(AtomicU64::new(1));
+        let window = WallpaperWindow {
+            display: crate::DisplayDesc::new(1, 0, 0, 100, 100, 1.0),
+            handle: None,
+            reveal_generation: generation.clone(),
+        };
+        let pending = PendingWindowReveal {
+            handle: Some(WindowHandleRef {
+                window: std::ptr::null_mut(),
+                content_view: std::ptr::null_mut(),
+                metal_layer: std::ptr::null_mut(),
+            }),
+            current_generation: generation,
+            generation: 1,
+        };
+        (window, pending)
+    }
+
+    #[test]
+    fn queued_first_frame_reveal_is_invalidated_by_hide() {
+        let (window, pending) = queued_reveal();
+        assert!(pending.clone().into_current_handle().is_some());
+
+        window.hide();
+
+        assert!(pending.into_current_handle().is_none());
+    }
+
+    #[test]
+    fn queued_first_frame_reveal_is_invalidated_before_close_releases_handles() {
+        let (mut window, pending) = queued_reveal();
+
+        window.close();
+
+        assert!(pending.into_current_handle().is_none());
+    }
+
+    #[test]
+    fn replacement_first_frame_callback_invalidates_queued_reveal() {
+        let (window, pending) = queued_reveal();
+
+        let _replacement = window.reveal_on_first_frame(Arc::new(|| {}));
+
+        assert!(pending.into_current_handle().is_none());
+    }
 
     #[test]
     fn mouse_buttons_reports_current_state_for_all_owe_buttons() {
