@@ -120,17 +120,19 @@ impl SceneRuntime {
     ) -> Result<Self, EngineError> {
         let mut stored_desc = desc.clone();
         stored_desc.mark_shader_refresh_complete();
-        let window = WallpaperWindow::builder(desc.display.clone()).open()?;
+        let window = WallpaperWindow::builder(desc.display.clone())
+            .hidden_until_first_frame()
+            .open()?;
         let renderer = backend.open_scene(
             desc,
             window.metal_layer_ptr(),
             state.scaling_mode,
             state.scaling_factor,
             state.render_resolution,
-            Some(Arc::new({
+            Some(window.reveal_on_first_frame(Arc::new({
                 let callback = first_frame_callback.clone();
                 move || callback(handle)
-            })),
+            }))),
         )?;
         let descriptor_state = SceneRuntimeState::try_from(desc)?;
         let mut runtime = Self {
@@ -238,6 +240,9 @@ impl SceneRuntime {
         // The old CAMetalLayer remains alive via MoltenVK's retain through
         // the old VkSurface, and is deallocated when `old_renderer.close()`
         // destroys that surface.
+        window.hide();
+        let first_frame_callback_for_renderer = window.reveal_on_first_frame(first_frame_callback);
+
         let metal_layer = window.update_layer(desc.display.clone())?;
 
         let mut renderer = match backend.open_scene(
@@ -246,7 +251,7 @@ impl SceneRuntime {
             state.scaling_mode,
             state.scaling_factor,
             render_resolution,
-            Some(first_frame_callback),
+            Some(first_frame_callback_for_renderer),
         ) {
             Ok(renderer) => renderer,
             Err(error) => {

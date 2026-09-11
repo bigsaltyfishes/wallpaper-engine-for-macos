@@ -682,6 +682,7 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
 
     fn playback_paused(&self) -> bool {
         self.state.playback_state == crate::api::BridgePlaybackState::Paused
+            && !self.state.pending_battery_pause_after_initial_frame
     }
 
     fn spawn_restore(&mut self, actor: ActorRef<BridgeActor<E>>) {
